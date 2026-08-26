@@ -1,0 +1,14 @@
+# dsh-workspace-mover bundle patch
+#
+# 通过官方 CLI 安装时（dsh plugin --profile <name> add dsh-workspace-mover），
+# 安装器会把本包追加进 dsh.profile.bundles 并在启动时合并本补丁，
+# 等价于手工在 profile 的 cordis.patch.yml 里挂载一行：
+#
+#   - insert:
+#       - id: workspace-mover
+#         name: 'dsh-workspace-mover'
+#
+# 单包单插件，无配置项。
+- insert:
+    - id: workspace-mover
+      name: 'dsh-workspace-mover'

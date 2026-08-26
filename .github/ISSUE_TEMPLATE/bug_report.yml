@@ -1,0 +1,35 @@
+name: Bug report
+description: Report a reproducible problem with the plugin
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Do not include session archives, prompts, tokens, or other private data."
+  - type: input
+    id: version
+    attributes:
+      label: Plugin version
+      placeholder: "0.4.0"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Include expected and actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, Node.js version, and DSH version.
+    validations:
+      required: true
