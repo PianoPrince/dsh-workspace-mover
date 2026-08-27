@@ -101,12 +101,27 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 
 > Real UI captures (click to enlarge).
 
+### Drag across workspaces
+
 | | |
 |---|---|
 | **Drag an idle session row onto the target workspace title row; a dashed highlight appears** | **The confirmation dialog shows the destination path—one click to move** |
 | ![Dragging a session to another workspace](docs/media/drag_session_to_another_workspace.png) | ![Cross-workspace move confirmation](docs/media/confirm_popup.png) |
 | **Settings → Session Rescue: recover orphaned and unregistered sessions** | |
 | ![Session rescue settings panel](docs/media/setting_dialogue_repair.png) | |
+
+### Move-home wizard · full field run
+
+A complete record of a real repair: the `Test1` folder was renamed to `Test2` on disk, then the wizard restored the workspace in place.
+
+| | |
+|---|---|
+| **Before: the `Test1` group works normally** | **After the rename the sidebar still shows the old group (folder gone from disk)** |
+| ![Workspace before rename](docs/media/original_workspace.png) | ![Workspace after rename](docs/media/workspace_after_rename.png) |
+| **Settings → Session Repair: health check flags the group, type the new path** | **The confirmation dialog shows old → new path and how many sessions will migrate** |
+| ![Workspace examination panel](docs/media/workspace_examination.png) | ![Move-home confirmation popup](docs/media/remove_popup.png) |
+| **Done: the group is renamed Test2 in place; sessions and history intact** | |
+| ![Workspace after move](docs/media/workspace_after_move.png) | |
 
 ## ⌨️ Usage
 

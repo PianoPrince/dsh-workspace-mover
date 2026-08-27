@@ -111,12 +111,27 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 
 > 以下均为真实界面实拍（点击可放大）。
 
+### 拖拽跨工作区迁移
+
 | | |
 |---|---|
 | **把空闲会话行拖到目标工作区标题行，出现虚线高亮** | **确认框亮出目标工作区路径，一键移动** |
 | ![把一个会话拖到另一个工作区](docs/media/drag_session_to_another_workspace.png) | ![跨工作区移动确认框](docs/media/confirm_popup.png) |
 | **设置 → 会话救援：一键找回失联与未记账的会话** | |
 | ![会话救援设置面板](docs/media/setting_dialogue_repair.png) | |
+
+### 工作区搬家向导 · 实测全程
+
+以下为一次真实搬家的完整记录：把 `Test1` 文件夹改名为 `Test2` 后，用向导原地修复工作区。
+
+| | |
+|---|---|
+| **改名前：`Test1` 分组正常工作** | **改名后侧边栏仍显示旧分组（磁盘上文件夹已不在）** |
+| ![改名前的工作区](docs/media/original_workspace.png) | ![改名后的工作区](docs/media/workspace_after_rename.png) |
+| **打开设置 → 会话修复：「工作区体检」把分组标为「路径失效」，填入新路径** | **确认框亮出起讫路径与将要迁移的会话数** |
+| ![工作区体检面板](docs/media/workspace_examination.png) | ![搬家确认弹窗](docs/media/remove_popup.png) |
+| **搬家完成：分组原地更名为 Test2，会话与历史原样保留** | |
+| ![搬家后的工作区](docs/media/workspace_after_move.png) | |
 
 ## ⌨️ 使用
 
