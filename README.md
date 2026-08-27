@@ -52,7 +52,7 @@ DeepSeek Harness 的侧边栏支持工作区内拖拽排序会话，但把会话
 4. **主题自适应 UI**：确认框/Toast 全部使用官方 `--dsw-alias-*` 设计令牌，跟随设置里的外观即时切换。
 5. **零依赖免构建**：host 半零 npm 依赖，client 半 source-as-product，无构建产物漂移风险。
 
-## 安装
+## 🚀 安装
 
 ```bash
 dsh plugin --profile web add "github:PianoPrince/dsh-workspace-mover"
@@ -61,17 +61,36 @@ dsh plugin --profile web add "github:PianoPrince/dsh-workspace-mover"
 
 > **零构建授权**：本插件是纯 JavaScript 源码即产物（无 TypeScript、无构建步骤），从 GitHub 安装时**不需要** `allowBuilds` 构建授权——pnpm 不会执行任何安装期脚本。
 
-也可以从 npm 安装（发布后）：
+<details>
+<summary><b>npm 渠道</b></summary>
 
 ```bash
 dsh plugin --profile web add dsh-workspace-mover
 ```
 
-本地开发安装：
+</details>
+
+<details>
+<summary><b>本地开发安装</b></summary>
 
 ```bash
 dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 ```
+
+</details>
+
+<details>
+<summary><b>常见问题</b></summary>
+
+| 现象 | 原因与解决 |
+|---|---|
+| 拖了但没反应 | 只在「分组视图」把会话行投到**工作区标题行**上才会触发；「扁平列表」视图没有标题行，本插件在该视图不激活 |
+| 提示会话正在运行中 | 宿主端校验回合状态；等该会话回合结束再拖即可 |
+| 移动失败的 toast | 每次操作前都有字节级备份、失败自动回滚；按 toast 说明处理后重试，详细原因见宿主日志中的 `MOVE FAILED` 条目 |
+| 移动成功但侧边栏没归位 | 插件迁移后会主动重拉一次工作区基线；偶发未生效时手动刷新页面 |
+| 有些会话从侧边栏不见了 | 打开 **设置 → 会话救援** 自动扫描，「失联」「未记账」两类都能一键找回 |
+
+</details>
 
 ## 使用
 
