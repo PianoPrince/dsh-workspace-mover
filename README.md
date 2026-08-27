@@ -1,11 +1,32 @@
 # dsh-workspace-mover
 
-**_> Unofficial project, independently developed and maintained by community members._**
+**_> 非官方项目，由社区成员独立开发和维护。_**
 
-> **DSH | Workspace Mover | 在侧边栏把会话拖拽到其他工作区，真迁移原始档案而非复制**
+<!-- Hero -->
+<div align="center">
+  <b style="font-size: 1.15em;">在侧边栏把会话拖到另一个工作区——真迁移原始档案，而不是复制</b><br /><br />
+  <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" /></a>
+  <a href="https://github.com/PianoPrince/dsh-workspace-mover/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/PianoPrince/dsh-workspace-mover" /></a>
+  <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
+  <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" />
+  <img alt="npm 依赖：0" src="https://img.shields.io/badge/npm%20%E4%BE%9D%E8%B5%96-0-4d6bfe" /><br /><br />
+  <img alt="真迁移" src="https://img.shields.io/badge/-真迁移-4d6bfe" /> <img alt="零 token 消耗" src="https://img.shields.io/badge/-零%20token%20消耗-4d6bfe" /> <img alt="备份回滚" src="https://img.shields.io/badge/-备份回滚-4d6bfe" /> <img alt="孤儿会话救援" src="https://img.shields.io/badge/-孤儿会话救援-4d6bfe" /> <img alt="一键撤回" src="https://img.shields.io/badge/-一键撤回-4d6bfe" /> <img alt="主题自适应" src="https://img.shields.io/badge/-主题自适应-4d6bfe" />
+</div>
 
-Project URL:
-https://github.com/PianoPrince/dsh-workspace-mover
+<div align="center">
+  <img alt="把一个会话拖到另一个工作区完成迁移" src="docs/media/drag_session_to_another_workspace.png" width="100%" />
+</div>
+
+## 📑 目录
+
+- [✨ 功能一览](#-功能一览)
+- [🚀 安装](#-安装)
+- [🖼️ 特性巡礼](#️-特性巡礼)
+- [⌨️ 使用](#️-使用)
+- [🔌 与 DSH 的集成方式](#-与-dsh-的集成方式)
+- [🔬 技术要点](#-技术要点)
+- [🆕 最近更新](#-最近更新)
+- [🔐 安全设计](#-安全设计) · [⚠️ 已知限制](#️-已知限制)
 
 ---
 
