@@ -40,6 +40,7 @@ DeepSeek Harness's sidebar supports drag-to-reorder within a workspace, but drop
 
 - **🖱️ Drag & drop**: Drag any idle session row onto a target workspace title row; a confirmation dialog shows the destination path—one click to move
 - **🚚 True move**: Physically relocates the original `session.jsonl.zstd` archive, rewrites the header `cwd`, and updates the workspace registry—the session id and full history are **preserved as-is**, with no duplicates, no context re-injection, and **zero token cost**
+- **🏠 Move-home wizard**: After a project folder was moved or renamed on disk, redirect the stale workspace **in place** to its new location with one click—workspace id, title, order and archive flags all preserved; every session under it, including stranded ones on the old path, migrates as-is in one batch. Running sessions skip automatically; an interrupted run resumes with only what remains.
 - **🛟 Orphan session rescue** (Settings → "Session Rescue" panel): Scans all session archives on disk and sorts them into—
   - **Orphaned**: sessions whose cwd broke after their project folder was moved/renamed/deleted, so they "disappeared" from the sidebar (community fix for discussion #3012); one click moves them for real into any existing workspace
   - **Unregistered**: sessions with a valid cwd that were never registered by any workspace (bootstrap runs once, agent-internal forks don't register); attach them in place
@@ -125,9 +126,16 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 3. **Unregistered** rows: click "Attach" to register them with the workspace matching their path;
 4. Every operation is bracketed by backup and rollback protection, with immediate feedback.
 
+### Move-home wizard
+
+1. Once a folder was moved or renamed, the **Workspace health** block at the top of the panel flags the matching group as missing;
+2. Type the folder's current full path into that row's input and press "Move home";
+3. The confirmation dialog shows old path → new path plus how many sessions will migrate; confirm to run;
+4. Accounted sessions travel over together with stranded strays from the old path. Running sessions skip this round — repeat later with the same inputs to pick up only what remains.
+
 ## 🔌 DSH Integration
 
-- **Host half** (`lib/index.js`, zero npm deps): mounted via a standard `insert` row in `cordis.patch.yml`; registers a logical channel through `ctx.connection.rpc.handle('/workspace-mover', …)` with endpoints `mover.status / mover.workspaces / mover.move / mover.scan / mover.repair / mover.history / mover.undo`; failure details land in the host log (`MOVE FAILED`).
+- **Host half** (`lib/index.js`, zero npm deps): mounted via a standard `insert` row in `cordis.patch.yml`; registers a logical channel through `ctx.connection.rpc.handle('/workspace-mover', …)` with endpoints `mover.status / mover.workspaces / mover.move / mover.scan / mover.repair / mover.history / mover.undo / mover.ws.audit / mover.repoint`; failure details land in the host log (`MOVE FAILED`).
 - **Move algorithm**:
   1. Running-state check: only sessions mid-turn are rejected (`agents.get(id)?.status === 'running'`, same predicate as the host UI's badge); sessions resident in memory but idle may be moved;
   2. Reads the authoritative session header from disk and verifies target ≠ source;
@@ -143,6 +151,12 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 
 ## 🆕 Recent Updates
 
+### v0.5.0 · 2026-08-27
+
+- Move-home wizard: the health panel flags groups whose folder went missing; one click re-points the stale workspace in place—workspace id, title, order and archive flags all preserved—through the entity's unified `mutate` channel (registry indexes pre-seeded first so no member is pruned)
+- Batch migration of member sessions plus stranded strays from the old path: per-file backup/rollback and resident write-state cleanup; running sessions skip automatically and interrupted runs resume with the same inputs
+- New endpoints `mover.ws.audit` / `mover.repoint`; fixed ghost detection being masked by the filtered getter (18 → 24 cases)
+
 ### v0.4.0 · 2026-08-26
 
 - Move history and one-click undo: keeps the last 100 cross-workspace moves (`mover.history` / `mover.undo` endpoints), moves sessions back to their original group from Settings, with undo covered by the same backup and rollback protection
@@ -157,7 +171,7 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 - Forced backup before every move; automatic rollback if attaching fails (unseed bookkeeping → restore index snapshot → restore bytes + clean target → reattach to the source workspace);
 - Only sessions mid-turn are rejected by default; idle resident sessions get their write-path ownership fixed after moving, preventing history forks;
 - All registry/persistence internals are wrapped in try/catch—on failure the plugin degrades to functional-with-a-restart-hint instead of breaking;
-- Compatibility targets: Node ≥ 22, dsh 0.1.1-rc.2; core pure functions and end-to-end sandbox tests ship via `npm test` (18 cases covering rollback paths, rescue scan/repair, and history undo).
+- Compatibility targets: Node ≥ 22, dsh 0.1.1-rc.2; core pure functions and end-to-end sandbox tests ship via `npm test` (24 cases covering rollback paths, rescue scan/repair, history undo, and workspace repoint).
 
 ## ⚠️ Known Limitations
 
