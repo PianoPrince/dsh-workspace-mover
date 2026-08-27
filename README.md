@@ -92,6 +92,17 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 
 </details>
 
+## 🖼️ 特性巡礼
+
+> 以下均为真实界面实拍（点击可放大）。
+
+| | |
+|---|---|
+| **把空闲会话行拖到目标工作区标题行，出现虚线高亮** | **确认框亮出目标工作区路径，一键移动** |
+| ![把一个会话拖到另一个工作区](docs/media/drag_session_to_another_workspace.png) | ![跨工作区移动确认框](docs/media/confirm_popup.png) |
+| **设置 → 会话救援：一键找回失联与未记账的会话** | |
+| ![会话救援设置面板](docs/media/setting_dialogue_repair.png) | |
+
 ## 使用
 
 1. 重启后在侧边栏**分组视图**里，按住任意空闲会话行；
@@ -130,20 +141,6 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 2. **失联**行：选目标工作区 → 点「迁移过去」（真迁移，ID 保留）；
 3. **未记账**行：点「补挂账」原地挂到路径匹配的工作区；
 4. 每次操作前后都有备份与回滚保护，结果即时反馈。
-
-## Screenshots
-
-### Drag a session to another workspace
-
-![Dragging a session to another workspace](docs/media/drag_session_to_another_workspace.png)
-
-### Move confirmation
-
-![Cross-workspace move confirmation](docs/media/confirm_popup.png)
-
-### Session repair settings
-
-![Session repair settings](docs/media/setting_dialogue_repair.png)
 
 ## 已知限制（v0.4.x）
 
