@@ -96,7 +96,10 @@ function findArtifact(sessionId) {
 }
 
 beforeEach(() => {
-  root = makeRoot();
+  // 生产环境中 cwd 一律是 realpath 规范化后的 canonical 路径（官方注册表
+  // 的唯一性约定）；macOS 的 Temp 位于 /var → /private/var 符号链接下，
+  // 夹具若用未规范化路径会与 canonical 比对失配，因此创建后立即归一。
+  root = realpathSync(makeRoot());
   A = join(root, 'proj-alpha');
   B = join(root, 'proj-beta');
   mkdirSync(A, { recursive: true });
