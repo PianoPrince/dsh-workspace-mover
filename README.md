@@ -14,6 +14,10 @@
 </div>
 
 <div align="center">
+  🌏 中文 · <a href="./README_EN.md">English</a>
+</div>
+
+<div align="center">
   <img alt="把一个会话拖到另一个工作区完成迁移" src="docs/media/drag_session_to_another_workspace.png" width="100%" />
 </div>
 
