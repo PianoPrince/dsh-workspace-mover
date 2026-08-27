@@ -55,10 +55,13 @@ function makeEntity(id, path, hostRef) {
     failAttach: false,
     async status() { return existsSync(record.path) ? 'ok' : 'missing-dir'; },
     async mutate(fn) {
+      // 官方语义：整体换新快照（本插件借此同步改写 path/title），随后按索引剪枝成员
       const changed = fn(record);
-      record.sessionIds = changed.sessionIds.filter((sid) => hostRef.sessionPath(String(sid)) === changed.path);
-      record.path = changed.path;
-      record.updatedAt = new Date().toISOString();
+      const pruned = changed.sessionIds.filter((sid) => hostRef.sessionPath(String(sid)) === changed.path);
+      Object.assign(record, changed, {
+        sessionIds: pruned,
+        updatedAt: new Date().toISOString()
+      });
     },
     async attachSession(sid) {
       if (this.failAttach) throw new Error('simulated attach failure');
@@ -547,4 +550,86 @@ test('进行中的会话整批跳过；path 已换好，空闲后携原路径续
   assert.match(res.value.skipped[0].error, /进行中/);
   assert.equal(entityA.record.path, realpathSync(A + '-moved'), 'path 换好了；等会话空闲后再续跑清扫');
   assert.ok(entityA.record.sessionIds.includes('session-aaa'), '进行中成员不被剪枝清掉（预置覆盖全部受影响会话）');
+});
+
+// ---- v0.5.1 三项热修回归 ----
+
+test('标题同步：默认名（=旧文件夹名）跟随改名，自定义标题原样保留', async () => {
+  apply(ctx);
+  setupMovedFolder();
+  const moved = A + '-moved';
+
+  entityA.record.title = 'proj-alpha';           // 官方 create 的默认值 = 文件夹名 → 应跟随改为 proj-alpha-moved
+  await call('mover.repoint', { workspaceId: 'wid-a', newPath: moved });
+  assert.equal(entityA.record.title, 'proj-alpha-moved', '默认名同步为新文件夹名');
+
+  apply(ctx);
+  setupMovedFolder2();
+  entityA.record.title = '我的项目';              // 用户自定义过 → 不动
+  await call('mover.repoint', { workspaceId: 'wid-a', newPath: A + '-moved' });
+  assert.equal(entityA.record.title, '我的项目', '自定义标题保留');
+});
+
+/** 独立夹具：避免用例间复用同一目录名导致的前置污染。 */
+function setupMovedFolder2() {
+  const dir = join(root, 'ws-t2');
+  mkdirSync(dir, { recursive: true });
+  const artifact = artifactPath(root, dir, 'session-t2');
+  mkdirSync(dirname(artifact), { recursive: true });
+  writeFileSync(artifact, makeArtifact({ type: 'session', id: 'session-t2', cwd: dir }));
+  const ent = makeEntity('wid-t2', dir, { ...sharedIndex, sessionPath: (id) => sharedIndex.sessionPaths.get(String(id)) });
+  ctx.workspaceRegistry.entities.set('wid-t2', ent);
+  sharedIndex.sessionPaths.set('session-t2', realpathSync(dir));
+  renameSync(dir, dir + '-moved');
+  return dir;
+}
+
+test('常驻会话热修：冻结头原地换新、@ 搜索缓存按旧根清除、投影检查点身份对齐', async () => {
+  apply(ctx);
+  const moved = setupMovedFolder();
+
+  const liveHeader = Object.freeze({ id: 'session-aaa', cwd: A });
+  const liveSession = { header: liveHeader };
+  let disposed = 0;
+  const agent = { session: liveSession };
+  const searches = new Map([[agent, { root: A, dispose() { disposed += 1; } }]]);
+  const applied = [];
+  const projTable = {
+    async update(id, fn) {
+      const next = fn({ identity: { createdAt: 1720000000000, cwd: A }, rows: { k: { ver: 1, seq: 5, val: {} } } });
+      applied.push([id, next]);
+      return next;
+    }
+  };
+  ctx.get = (key) => {
+    if (key === 'agents') return { get: () => ({ status: 'idle' }) };
+    if (key === 'sessions') return { get: (id) => (String(id) === 'session-aaa' ? liveSession : undefined) };
+    if (key === 'fileReferences') return { searches };
+    if (key === 'sessionProjectionCache') return { table: projTable };
+    return undefined;
+  };
+
+  const res = await call('mover.repoint', { workspaceId: 'wid-a', newPath: moved });
+  assert.equal(res.ok, true, JSON.stringify(res));
+
+  const canon = realpathSync(moved);
+  assert.notEqual(liveSession.header, liveHeader, 'live 头已替换而非原地改写');
+  assert.equal(liveSession.header.cwd, canon, 'live 头指向新家');
+  assert.ok(Object.isFrozen(liveSession.header), '替换后的头保持官方冻结语义');
+  assert.equal(disposed, 1, '以旧路径为根的 @ 搜索被 dispose');
+  assert.ok(!searches.has(agent), '缓存条目删除，下次 @ 按新头重建');
+  assert.equal(applied.length, 1);
+  assert.equal(applied[0][0], 'session-aaa');
+  assert.equal(applied[0][1].identity.cwd, canon, '投影检查点 identity.cwd 对齐');
+  assert.equal(applied[0][1].identity.createdAt, 1720000000000, 'createdAt 不变（同一日志生命周期）');
+});
+
+test('宿主缺少 fileReferences/sessionProjectionCache 服务时热修静默降级', async () => {
+  apply(ctx);
+  setupMovedFolder();
+  ctx.get = () => undefined;
+
+  const res = await call('mover.repoint', { workspaceId: 'wid-a', newPath: A + '-moved' });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.movedCount, 1);
 });

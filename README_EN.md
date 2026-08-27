@@ -151,6 +151,11 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 
 ## 🆕 Recent Updates
 
+### v0.5.1 · 2026-08-27
+
+- Three field-tested regression fixes: ① move-home now syncs the workspace title to the new folder name when it still equals the old basename (official create default); custom titles are kept; ② after any move, a resident session's frozen in-memory header is swapped in place and `@` file-reference searches rooted at the old path are disposed — `@` works against the new location without restarting; ③ projection-cache checkpoints get their log identity realigned, so cold starts stop discarding caches and session lists stop falling back to the group name until first open
+- Tests 24 → 27 cases
+
 ### v0.5.0 · 2026-08-27
 
 - Move-home wizard: the health panel flags groups whose folder went missing; one click re-points the stale workspace in place—workspace id, title, order and archive flags all preserved—through the entity's unified `mutate` channel (registry indexes pre-seeded first so no member is pruned)
@@ -171,7 +176,7 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 - Forced backup before every move; automatic rollback if attaching fails (unseed bookkeeping → restore index snapshot → restore bytes + clean target → reattach to the source workspace);
 - Only sessions mid-turn are rejected by default; idle resident sessions get their write-path ownership fixed after moving, preventing history forks;
 - All registry/persistence internals are wrapped in try/catch—on failure the plugin degrades to functional-with-a-restart-hint instead of breaking;
-- Compatibility targets: Node ≥ 22, dsh 0.1.1-rc.2; core pure functions and end-to-end sandbox tests ship via `npm test` (24 cases covering rollback paths, rescue scan/repair, history undo, and workspace repoint).
+- Compatibility targets: Node ≥ 22, dsh 0.1.1-rc.2; core pure functions and end-to-end sandbox tests ship via `npm test` (27 cases covering rollback paths, rescue scan/repair, history undo, and workspace repoint).
 
 ## ⚠️ Known Limitations
 

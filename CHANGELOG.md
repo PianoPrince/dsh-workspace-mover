@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.1] - 2026-08-27
+
+### Fixed
+
+- Workspace titles now follow folder renames during move-home when the title still equals the old folder's basename (the official `create` default); user-chosen titles are preserved.
+- Resident sessions get their frozen in-memory header swapped to the new cwd after a move, so `@` file references rebuild their search root without a harness restart.
+- Stale `@` file-reference search caches rooted at the old path are disposed after every move/repoint.
+- Projection-cache checkpoints have their log identity (`identity.cwd`) aligned after header rewrites, so cold starts keep serving cached projections (session titles) instead of discarding them and lazily falling back to the group name until first open.
+
 ## [0.5.0] - 2026-08-27
 
 ### Added
