@@ -61,7 +61,17 @@ window.__ModuleLoader__.load({
 				undoConfirm: "确定把这个会话移回原来的分组吗？",
 				undone: "✓ 已撤回移动",
 				historyEmpty: "还没有移动记录。",
-				unnamedSession: "未命名会话"
+				unnamedSession: "未命名会话",
+				wsSection: "工作区体检",
+				wsHelp: "「路径失效」表示这个分组登记的文件夹已经在磁盘上被移动、改名或删除——它名下的会话也因此从侧边栏消失。在新路径栏填入文件夹现在的位置并点「搬家」：工作区原地改指向，名下全部会话连同仍留在旧位置的失联散件一起原样搬过去；每一步都先备份、失败自动回滚。中途被打断也不必重来：空闲后用同样的新路径再跑一次，向导只处理剩余部分。",
+				wsBadges: "路径失效",
+				wsMemberLine: "{n} 个会话记账在此",
+				wsNewPathPh: "新路径：文件夹现在所在的完整路径",
+				wizardBtn: "搬家",
+				wsNeedPath: "请先在右侧输入框填写新的文件夹路径",
+				wizardConfirm: "把「{title}」搬到这里吗？\n\n{from}\n→ {to}\n\n将原样迁移 {count} 个会话（ID 与历史不变），全程有备份保护。",
+				wizardDone: "✓ 「{title}」已搬家，{n} 个会话已就位",
+				wizardSkippedTail: "；另有 {n} 个本次跳过（运行中或异常），稍后用同样操作可续跑"
 			},
 			en: {
 				confirmTitle: "Move session across workspaces",
@@ -108,7 +118,17 @@ window.__ModuleLoader__.load({
 				undoConfirm: "Send this session back to its original group?",
 				undone: "✓ Move undone",
 				historyEmpty: "No move history yet.",
-				unnamedSession: "Untitled session"
+				unnamedSession: "Untitled session",
+				wsSection: "Workspace health",
+				wsHelp: "\"Missing folder\" means the directory this group points to was moved, renamed or deleted on disk — which is also why its sessions vanished from the sidebar. Type the folder's current location and press \"Move home\": the workspace is re-pointed in place and every session under it — including stranded ones still at the old path — travels over intact. Each step backs up first and rolls back automatically. If the run is ever interrupted, simply run it again with the same new path; the wizard picks up only what remains.",
+				wsBadges: "Missing folder",
+				wsMemberLine: "{n} sessions accounted here",
+				wsNewPathPh: "New path: full path of the folder's current location",
+				wizardBtn: "Move home",
+				wsNeedPath: "Type the new folder path into the input first",
+				wizardConfirm: "Move \"{title}\" here?\n\n{from}\n→ {to}\n\n{count} sessions will be migrated as-is (IDs and history unchanged), with backup protection throughout.",
+				wizardDone: "✓ \"{title}\" moved home — {n} sessions in place",
+				wizardSkippedTail: "; {n} skipped this run (running or unusual) — repeat later with the same inputs to finish"
 			}
 		};
 		const lang = (navigator.language || "en").toLowerCase().startsWith("zh") ? "zh" : "en";
@@ -157,6 +177,8 @@ window.__ModuleLoader__.load({
 .wsm-badge.err{color:var(--dsw-alias-state-error-primary,#dc2626);border-color:currentColor}
 .wsm-cwd{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary,#999)}
 .wsm-select{font:inherit;font-size:12px;background:var(--dsw-specific-input-major,#fff);color:var(--dsw-alias-label-primary,#111);border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.15));border-radius:6px;padding:3px 6px;max-width:220px}
+.wsm-input{flex:1.4;min-width:170px;font:inherit;font-size:12px;background:var(--dsw-specific-input-major,#fff);color:var(--dsw-alias-label-primary,#111);border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.15));border-radius:6px;padding:3px 7px}
+.wsm-input::placeholder{color:var(--dsw-alias-label-tertiary,#999)}
 .wsm-note{margin-top:8px;font-size:12.5px;color:var(--dsw-alias-label-secondary,#666);white-space:pre-wrap;word-break:break-all}
 .wsm-caption{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary,#666);margin-bottom:6px}
 .wsm-help{flex:none;display:inline-flex;width:15px;height:15px;border-radius:50%;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.2));align-items:center;justify-content:center;font-size:10px;font-weight:400;color:var(--dsw-alias-label-tertiary,#999);cursor:help;user-select:none}
@@ -239,6 +261,8 @@ window.__ModuleLoader__.load({
 		function RescuePanel({ rpcCall }) {
 			const [scan, setScan] = useState(null);
 			const [workspaces, setWorkspaces] = useState([]);
+			const [audit, setAudit] = useState(null);
+			const [wsInputs, setWsInputs] = useState({});
 			const [busy, setBusy] = useState(false);
 			const [picked, setPicked] = useState({});
 			const [note, setNote] = useState("");
@@ -253,10 +277,11 @@ window.__ModuleLoader__.load({
 			const runScan = async () => {
 				setBusy(true);
 				try {
-					const [s, w, h] = await Promise.all([call("mover.scan"), call("mover.workspaces"), call("mover.history")]);
+					const [s, w, h, a] = await Promise.all([call("mover.scan"), call("mover.workspaces"), call("mover.history"), call("mover.ws.audit")]);
 					setScan(s);
 					setWorkspaces(w.items ?? []);
 					setHistory(h.items ?? []);
+					setAudit(a);
 				} catch (err) {
 					setNote(t("failed", { msg: err?.message ?? err }));
 				} finally {
@@ -316,9 +341,31 @@ window.__ModuleLoader__.load({
 				}
 			};
 
+			// 工作区搬家向导：dryRun 盘点 → 原生确认框亮出起讫与数量 → 执行
+			const repoint = async (row) => {
+				const nextPath = String(wsInputs[row.workspaceId] ?? "").trim();
+				if (!nextPath) return void setNote(t("wsNeedPath"));
+				setBusy(true);
+				setNote("");
+				try {
+					const dry = await call("mover.repoint", { workspaceId: row.workspaceId, fromPath: row.path, newPath: nextPath, dryRun: true });
+					if (!window.confirm(t("wizardConfirm", { title: row.title, from: row.path, to: nextPath, count: dry.count }))) return;
+					const res = await call("mover.repoint", { workspaceId: row.workspaceId, fromPath: row.path, newPath: nextPath });
+					let message = t("wizardDone", { title: row.title, n: res.movedCount });
+					if (res.skipped?.length > 0) message += t("wizardSkippedTail", { n: res.skipped.length });
+					setNote(message);
+					await runScan();
+				} catch (err) {
+					setNote(t("failed", { msg: err?.message ?? err }));
+				} finally {
+					setBusy(false);
+				}
+			};
+
 			const items = scan?.items ?? [];
 			const orphaned = items.filter((it) => it.status === "orphaned");
 			const unregistered = items.filter((it) => it.status === "unregistered");
+			const brokenWorkspaces = (audit?.items ?? []).filter((it) => it.status !== "ok");
 			const counts = scan?.counts ?? {};
 			const summaryParts = [
 				["orphaned", t("stalePath")],
@@ -336,6 +383,22 @@ window.__ModuleLoader__.load({
 						t("scannedN", { n: scan.scanned }) + (summaryParts.length ? ` · ${summaryParts.join(" · ")}` : ""))
 						: null
 				),
+				brokenWorkspaces.length > 0 ? h(Caption, { text: t("wsSection"), help: t("wsHelp") }) : null,
+				brokenWorkspaces.length > 0 ? h("div", { className: "wsm-list" },
+					brokenWorkspaces.map((row) => h("div", { className: "wsm-item", key: row.workspaceId },
+						h("span", { className: "wsm-badge err" }, t("wsBadges")),
+						h("b", { title: t("wsMemberLine", { n: row.memberCount }) }, row.title),
+						h("span", { className: "wsm-cwd", title: row.path }, row.path),
+						h("input",
+							{
+								className: "wsm-input", placeholder: t("wsNewPathPh"), disabled: busy,
+								value: wsInputs[row.workspaceId] ?? "",
+								onChange: (e) => setWsInputs((p) => ({ ...p, [row.workspaceId]: e.target.value }))
+							}
+						),
+						h("button", { className: "wsm-btn small primary", disabled: busy, onClick: () => void repoint(row) }, t("wizardBtn"))
+					))
+				) : null,
 				orphaned.length > 0 ? h(Caption, { text: t("orphanedCaption"), help: t("helpPath") }) : null,
 				orphaned.length > 0 ? h("div", { className: "wsm-list" },
 					orphaned.map((it) => h("div", { className: "wsm-item", key: it.sessionId },
