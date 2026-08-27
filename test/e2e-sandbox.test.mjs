@@ -3,7 +3,7 @@
 // 备份目录通过 DSH_HOME 重定向到临时区，不污染真实环境。
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync, renameSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { zstdCompressSync, constants } from 'node:zlib';
@@ -15,7 +15,7 @@ const DEAD = 'E:\\wsm-dead-path'; // 刻意不存在的路径（孤儿分类用�
 let A; // 每次用例指向真实临时目录（健康会话要求 cwd 在磁盘上存在）
 let B;
 let root;
-let ctx, entityA, entityB;
+let ctx, entityA, entityB, sharedIndex;
 
 /** 测试根目录：优先 WSM_TEST_ROOT（受限环境下 Temp 可能禁止目录重命名），否则退回系统 Temp。 */
 function makeRoot() {
@@ -36,19 +36,45 @@ function makeArtifact(header) {
   return Buffer.concat([head, ev]);
 }
 
-/** 模拟 dsh 工作区实体：record 快照 + 记账，attach 对已记账 id 跳过校验（官方语义）。 */
-function makeEntity(id, path) {
-  const record = { path, sessionIds: [] };
+/**
+ * 模拟 dsh 工作区实体：record 快照 + 记账，attach 对已记账 id 跳过校验（官方语义）。
+ * mutate 复刻官方统一写入通道的两个关键行为：调用 fn 生成新快照后，
+ * 按「索引中的会话 cwd === 新 path」剪枝成员（对应 WorkspaceEntity.mutate）；
+ * status 对应官方 missing-dir 判定。
+ */
+function makeEntity(id, path, hostRef) {
+  const record = { path, title: id, sessionIds: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   return {
     id,
-    path,
+    // 官方语义：path 是读取 record 的实时 getter（mutate 换路径后立即生效）
+    get path() { return record.path; },
     get record() { return record; },
-    get sessionIds() { return [...record.sessionIds]; },
+    get sessionIds() { return [...record.sessionIds].filter((sid) => hostRef.sessionPath(String(sid)) === record.path); },
     attached: [],
     detached: [],
     failAttach: false,
+    async status() { return existsSync(record.path) ? 'ok' : 'missing-dir'; },
+    async mutate(fn) {
+      const changed = fn(record);
+      record.sessionIds = changed.sessionIds.filter((sid) => hostRef.sessionPath(String(sid)) === changed.path);
+      record.path = changed.path;
+      record.updatedAt = new Date().toISOString();
+    },
     async attachSession(sid) {
       if (this.failAttach) throw new Error('simulated attach failure');
+      if (!record.sessionIds.includes(sid)) {
+        // 官方语义：未记账 id 需通过「头部 cwd 规范化后 === path」校验，
+        // 并经 rememberSessionPath 回填三张索引后才挂账
+        const header = readHeader(readFileSync(findArtifact(sid)));
+        let canonical;
+        try { canonical = realpathSync(header.cwd); } catch {
+          throw new Error(`cwd does not resolve: '${header.cwd}'`);
+        }
+        if (canonical.toLowerCase() !== record.path.toLowerCase()) throw new Error(`cwd resolves elsewhere: '${header.cwd}'`);
+        sharedIndex.headers.set(String(sid), header);
+        sharedIndex.sessionPaths.set(String(sid), canonical);
+        sharedIndex.invalidSessionPaths.delete(String(sid));
+      }
       this.attached.push(sid);
       record.sessionIds.unshift(sid);
     },
@@ -57,6 +83,16 @@ function makeEntity(id, path) {
       record.sessionIds = record.sessionIds.filter((x) => x !== sid);
     }
   };
+}
+
+/** 按存储布局约定在磁盘上找某会话的档案位置。 */
+function findArtifact(sessionId) {
+  for (const proj of readdirSync(root)) {
+    if (!(proj.startsWith('--') && proj.endsWith('--'))) continue;
+    const candidate = join(root, proj, sessionId, 'session.jsonl.zstd');
+    if (existsSync(candidate)) return candidate;
+  }
+  throw new Error(`artifact for ${sessionId} not found`);
 }
 
 beforeEach(() => {
@@ -73,13 +109,16 @@ beforeEach(() => {
   mkdirSync(dirname(artifactPath(root, B, 'placeholder')), { recursive: true });
   writeFileSync(srcArtifact, makeArtifact({ type: 'session', id: 'session-aaa', cwd: A, title: 'Alpha discussion' }));
 
-  entityA = makeEntity('wid-a', A);
-  entityB = makeEntity('wid-b', B);
+  // 三张内存索引先于实体创建（实体 mutate 的成员剪枝按此判定）；
+  // 官方实体持有的是 { sessionPath(id) } 形态的宿主引用
+  sharedIndex = { headers: new Map(), sessionPaths: new Map(), invalidSessionPaths: new Map() };
+  const hostRef = { ...sharedIndex, sessionPath: (id) => sharedIndex.sessionPaths.get(String(id)) };
+
+  entityA = makeEntity('wid-a', A, hostRef);
+  entityB = makeEntity('wid-b', B, hostRef);
   const registry = {
+    ...sharedIndex,
     entities: new Map([['wid-a', entityA], ['wid-b', entityB]]),
-    headers: new Map(),
-    sessionPaths: new Map(),
-    invalidSessionPaths: new Map(),
     get(id) { return this.entities.get(id); },
     list() { return [...this.entities.values()]; }
   };
@@ -300,8 +339,10 @@ test('回合进行中的会话被拒绝', async () => {
 
 test('mover.scan 分类 orphaned / unregistered / ok，并检出幽灵记账', async () => {
   apply(ctx);
-  // ok：A 下已注册的 session-aaa（beforeEach 已建）
+  // ok：A 下已注册的 session-aaa（beforeEach 已建）；生产环境启动期会把健康成员写入索引
   entityA.record.sessionIds.push('session-aaa');
+  sharedIndex.headers.set('session-aaa', { id: 'session-aaa', cwd: A });
+  sharedIndex.sessionPaths.set('session-aaa', realpathSync(A));
   // unregistered：cwd=A 有效但无人记账
   const unregDir = artifactPath(root, A, 'session-unreg');
   mkdirSync(dirname(unregDir), { recursive: true });
@@ -366,4 +407,141 @@ test('mover.repair：attach 无匹配工作区时报错、未知 kind 报错、�
 
   const tooMany = await call('mover.repair', { actions: Array.from({ length: 51 }, (_, i) => ({ sessionId: `s${i}`, kind: 'attach' })) });
   assert.equal(tooMany.ok, false);
+});
+
+// ---- v0.5 工作区搬家向导：体检 + 原地重定向 ----
+
+/** 模拟「用户已在磁盘把项目文件夹改名」的现实场景，并登记一个已记账成员。 */
+function setupMovedFolder() {
+  entityA.record.sessionIds.push('session-aaa');
+  sharedIndex.headers.set('session-aaa', { id: 'session-aaa', cwd: A, title: 'Alpha discussion' });
+  sharedIndex.sessionPaths.set('session-aaa', realpathSync(A));
+  const moved = A + '-moved';
+  renameSync(A, moved);
+  return moved;
+}
+
+test('mover.ws.audit：官方 status 判定 missing-dir，记账数取原始名单', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  renameSync(A, A + '-moved');
+
+  const res = await call('mover.ws.audit');
+  assert.equal(res.ok, true, JSON.stringify(res));
+  const byId = Object.fromEntries(res.value.items.map((it) => [it.workspaceId, it]));
+  assert.equal(byId['wid-a'].status, 'missing-dir');
+  assert.equal(byId['wid-a'].path, A, '失效路径原样暴露给体检面板');
+  assert.equal(byId['wid-a'].memberCount, 1, '原始记账数（含索引已失联的成员）');
+  assert.equal(byId['wid-b'].status, 'ok');
+});
+
+test('搬家向导：dryRun 只盘点；执行后换 path、成员原地迁移、散件补挂账', async () => {
+  apply(ctx);
+  const moved = setupMovedFolder();
+  // 一只从未被记账的散件也留在旧路径（cwd=A 且目录已被搬走）
+  const strayDir = artifactPath(root, A, 'session-stray');
+  mkdirSync(dirname(strayDir), { recursive: true });
+  writeFileSync(strayDir, makeArtifact({ type: 'session', id: 'session-stray', cwd: A }));
+
+  const dry = await call('mover.repoint', { workspaceId: 'wid-a', newPath: moved, dryRun: true });
+  assert.equal(dry.ok, true, JSON.stringify(dry));
+  assert.equal(dry.value.count, 2);
+  assert.deepEqual(dry.value.items.map((i) => i.sessionId).sort(), ['session-aaa', 'session-stray']);
+  assert.ok(existsSync(artifactPath(root, A, 'session-aaa')), 'dryRun 不动任何文件');
+
+  const res = await call('mover.repoint', { workspaceId: 'wid-a', newPath: moved });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.pathUpdated, true);
+  assert.equal(res.value.movedCount, 2);
+  assert.deepEqual(res.value.skipped, []);
+
+  const canon = realpathSync(moved);
+  assert.equal(entityA.record.path, canon, '注册表路径已重定向（工作区 id 不变）');
+  assert.ok(entityA.record.sessionIds.includes('session-aaa'), '成员通过 mutate 剪枝存活（索引预置生效）');
+  assert.ok(entityA.record.sessionIds.includes('session-stray'), '散件补挂账进同一工作区');
+
+  const newArtifact = readFileSync(artifactPath(root, canon, 'session-aaa'));
+  assert.equal(readHeader(newArtifact).cwd, canon, '头部 cwd 改写为新家');
+  assert.ok(!existsSync(artifactPath(root, A, 'session-aaa')), '旧位置档案清空');
+
+  const after = await call('mover.ws.audit');
+  const row = after.value.items.find((it) => it.workspaceId === 'wid-a');
+  assert.equal(row.status, 'ok', '搬家后体检转绿');
+});
+
+test('新路径被其他工作区占用时拒绝，且不动任何文件', async () => {
+  apply(ctx);
+  setupMovedFolder();
+  const before = readFileSync(artifactPath(root, A, 'session-aaa'));
+
+  const res = await call('mover.repoint', { workspaceId: 'wid-a', newPath: B });
+  assert.equal(res.ok, false);
+  assert.match(res.error.message, /占用/);
+  assert.equal(entityA.record.path, A, 'path 未变');
+  assert.deepEqual(readFileSync(artifactPath(root, A, 'session-aaa')), before, '字节未动');
+});
+
+test('宿主实体缺少 mutate 写入通道时整体中止并还原索引快照', async () => {
+  apply(ctx);
+  setupMovedFolder();
+  const priorHeader = sharedIndex.headers.get('session-aaa');
+  delete entityA.mutate;
+
+  const res = await call('mover.repoint', { workspaceId: 'wid-a', newPath: A + '-moved' });
+  assert.equal(res.ok, false);
+  assert.match(res.error.message, /mutate/);
+  assert.ok(!/[\\/]proj-alpha-moved[\\/]/.test(findArtifact('session-aaa')), '文件留在原地');
+  assert.equal(sharedIndex.headers.get('session-aaa'), priorHeader, 'headers 快照还原');
+  assert.equal(
+    String(sharedIndex.sessionPaths.get('session-aaa')).toLowerCase(),
+    A.toLowerCase(),
+    'sessionPaths 还原为改名前的 canonical（realpath 与原路径一致）'
+  );
+});
+
+test('逐会话失败只影响自己：目标撞车者跳过，其余完成；清理障碍后续跑收尾', async () => {
+  apply(ctx);
+  const moved = setupMovedFolder();
+  entityA.record.sessionIds.push('session-blocker');
+  mkdirSync(dirname(artifactPath(root, A, 'session-blocker')), { recursive: true });
+  writeFileSync(artifactPath(root, A, 'session-blocker'),
+    makeArtifact({ type: 'session', id: 'session-blocker', cwd: A }));
+  sharedIndex.headers.set('session-blocker', { id: 'session-blocker', cwd: A });
+  sharedIndex.sessionPaths.set('session-blocker', A); // canonical 即改名前的原路径
+  // 预先在新家放置同名档案制造撞车
+  mkdirSync(dirname(artifactPath(root, moved, 'session-blocker')), { recursive: true });
+  writeFileSync(artifactPath(root, moved, 'session-blocker'), makeArtifact({ type: 'session', id: 'x', cwd: moved }));
+
+  const first = await call('mover.repoint', { workspaceId: 'wid-a', fromPath: A, newPath: moved });
+  assert.equal(first.ok, true, JSON.stringify(first));
+  assert.deepEqual(first.value.moved.map((m) => m.sessionId), ['session-aaa'], '健康成员照常迁移');
+  assert.equal(first.value.skipped.length, 1);
+  assert.equal(first.value.skipped[0].sessionId, 'session-blocker');
+  assert.match(first.value.skipped[0].error, /已有同名档案/);
+
+  rmSync(dirname(artifactPath(root, moved, 'session-blocker')), { recursive: true, force: true });
+
+  const second = await call('mover.repoint', { workspaceId: 'wid-a', fromPath: A, newPath: moved });
+  assert.equal(second.ok, true, JSON.stringify(second));
+  assert.equal(second.value.pathUpdated, false, 'resume 模式不再重复改写 path');
+  assert.equal(second.value.movedCount, 1);
+  assert.equal(second.value.moved[0].sessionId, 'session-blocker');
+  assert.ok(existsSync(artifactPath(root, realpathSync(moved), 'session-blocker')));
+});
+
+test('进行中的会话整批跳过；path 已换好，空闲后携原路径续跑即可收尾', async () => {
+  apply(ctx);
+  setupMovedFolder();
+  ctx.get = (key) => (key === 'agents' ? { get: () => ({ status: 'running' }) } : undefined);
+
+  const dry = await call('mover.repoint', { workspaceId: 'wid-a', newPath: A + '-moved', dryRun: true });
+  assert.equal(dry.value.count, 1, '盘点仍如实报告总数');
+
+  const res = await call('mover.repoint', { workspaceId: 'wid-a', newPath: A + '-moved' });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.movedCount, 0);
+  assert.equal(res.value.skipped[0].sessionId, 'session-aaa');
+  assert.match(res.value.skipped[0].error, /进行中/);
+  assert.equal(entityA.record.path, realpathSync(A + '-moved'), 'path 换好了；等会话空闲后再续跑清扫');
+  assert.ok(entityA.record.sessionIds.includes('session-aaa'), '进行中成员不被剪枝清掉（预置覆盖全部受影响会话）');
 });
