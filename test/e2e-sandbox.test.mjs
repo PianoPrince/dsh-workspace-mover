@@ -552,6 +552,68 @@ test('进行中的会话整批跳过；path 已换好，空闲后携原路径续
   assert.ok(entityA.record.sessionIds.includes('session-aaa'), '进行中成员不被剪枝清掉（预置覆盖全部受影响会话）');
 });
 
+// ---- v0.6 批量迁移：mover.moveMany ----
+
+test('moveMany：多个会话一次迁移到同一目标，逐条返回结果与汇总', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  // 同组再来一个会话
+  const dir2 = artifactPath(root, A, 'session-bbb');
+  mkdirSync(dirname(dir2), { recursive: true });
+  writeFileSync(dir2, makeArtifact({ type: 'session', id: 'session-bbb', cwd: A, title: 'Beta talk' }));
+
+  const res = await call('mover.moveMany', {
+    sessions: [
+      { sessionId: 'session-aaa', sessionTitle: 'Alpha discussion' },
+      { sessionId: 'session-bbb' }
+    ],
+    targetWorkspaceId: 'wid-b'
+  });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.movedCount, 2);
+  assert.equal(res.value.failedCount, 0);
+  assert.deepEqual(res.value.results.map((r) => r.sessionId).sort(), ['session-aaa', 'session-bbb']);
+  assert.ok(res.value.results.every((r) => r.ok));
+  assert.ok(!existsSync(artifactPath(root, A, 'session-aaa')));
+  assert.ok(existsSync(artifactPath(root, B, 'session-bbb')));
+  assert.equal(readHeader(readFileSync(artifactPath(root, B, 'session-bbb'))).cwd, B);
+  // 移动历史逐条落账，可整批撤回
+  const history = await call('mover.history');
+  assert.equal(history.value.items.length, 2);
+});
+
+test('moveMany：坏会话只影响自己，其余照常完成', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  const res = await call('mover.moveMany', {
+    sessions: [
+      { sessionId: 'session-ghost' }, // 不存在
+      { sessionId: 'session-aaa' }
+    ],
+    targetWorkspaceId: 'wid-b'
+  });
+  assert.equal(res.ok, true);
+  assert.equal(res.value.movedCount, 1);
+  assert.equal(res.value.failedCount, 1);
+  const byId = Object.fromEntries(res.value.results.map((r) => [r.sessionId, r]));
+  assert.equal(byId['session-ghost'].ok, false);
+  assert.match(byId['session-ghost'].error, /not found/);
+  assert.equal(byId['session-aaa'].ok, true);
+});
+
+test('moveMany：空列表 / 超上限 / 缺 target 整批拒绝', async () => {
+  apply(ctx);
+  const empty = await call('mover.moveMany', { sessions: [], targetWorkspaceId: 'wid-b' });
+  assert.equal(empty.ok, false);
+  const tooMany = await call('mover.moveMany', {
+    sessions: Array.from({ length: 51 }, (_, i) => ({ sessionId: `s${i}` })),
+    targetWorkspaceId: 'wid-b'
+  });
+  assert.equal(tooMany.ok, false);
+  const noTarget = await call('mover.moveMany', { sessions: [{ sessionId: 'session-aaa' }] });
+  assert.equal(noTarget.ok, false);
+});
+
 // ---- v0.5.1 三项热修回归 ----
 
 test('标题同步：默认名（=旧文件夹名）跟随改名，自定义标题原样保留', async () => {

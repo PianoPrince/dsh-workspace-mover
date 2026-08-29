@@ -71,7 +71,15 @@ window.__ModuleLoader__.load({
 				wsNeedPath: "请先在右侧输入框填写新的文件夹路径",
 				wizardConfirm: "把「{title}」搬到这里吗？\n\n{from}\n→ {to}\n\n将原样迁移 {count} 个会话（ID 与历史不变），全程有备份保护。",
 				wizardDone: "✓ 「{title}」已搬家，{n} 个会话已就位",
-				wizardSkippedTail: "；另有 {n} 个本次跳过（运行中或异常），稍后用同样操作可续跑"
+				wizardSkippedTail: "；另有 {n} 个本次跳过（运行中或异常），稍后用同样操作可续跑",
+				batchConfirmTitle: "批量移动会话",
+				batchHint: "将把 {count} 个会话真迁移到目标工作区；每个会话独立备份，失败自动回滚且不影响其余。",
+				batchMove: "全部移动",
+				batchDone: "✓ 成功 {n} 个",
+				batchFailTail: "；{n} 个未移动（详见结果）",
+				pickHint: "已选 {n} 个会话 · Ctrl+点击行可多选 · 拖到目标工作区标题行批量移动 · Esc 清空",
+				pickCleared: "已清空多选",
+				pickEscHint: "按 Esc 清空多选（输入框聚焦时无效）"
 			},
 			en: {
 				confirmTitle: "Move session across workspaces",
@@ -128,7 +136,15 @@ window.__ModuleLoader__.load({
 				wsNeedPath: "Type the new folder path into the input first",
 				wizardConfirm: "Move \"{title}\" here?\n\n{from}\n→ {to}\n\n{count} sessions will be migrated as-is (IDs and history unchanged), with backup protection throughout.",
 				wizardDone: "✓ \"{title}\" moved home — {n} sessions in place",
-				wizardSkippedTail: "; {n} skipped this run (running or unusual) — repeat later with the same inputs to finish"
+				wizardSkippedTail: "; {n} skipped this run (running or unusual) — repeat later with the same inputs to finish",
+				batchConfirmTitle: "Move sessions in bulk",
+				batchHint: "{count} sessions will be truly moved to the target workspace; each is backed up independently and failures roll back without touching the rest.",
+				batchMove: "Move all",
+				batchDone: "✓ {n} moved",
+				batchFailTail: "; {n} not moved (see results)",
+				pickHint: "{n} sessions picked · Ctrl+click rows to multi-select · drag onto a workspace header to move in bulk · Esc to clear",
+				pickCleared: "Selection cleared",
+				pickEscHint: "Press Esc to clear the multi-selection (not while typing in the composer)"
 			}
 		};
 		const lang = (navigator.language || "en").toLowerCase().startsWith("zh") ? "zh" : "en";
@@ -146,6 +162,9 @@ window.__ModuleLoader__.load({
 			// 重解析），仅在令牌缺失时回退到浅色常量；无需监听主题变化。
 			style.textContent = `
 .wsm-drop-hint{outline:2px dashed var(--dsw-alias-state-business-primary,#4176e6)!important;outline-offset:-2px;border-radius:8px}
+.wsm-picked{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6)!important;outline-offset:-2px;border-radius:8px;background:var(--dsw-alias-interactive-bg-selected,rgba(65,118,230,.12))!important}
+.wsm-pick-badge{flex:none;font-size:10px;line-height:1;padding:2px 6px;border-radius:99px;background:var(--dsw-alias-state-business-primary,#4176e6);color:var(--dsw-alias-label-primary-foreground,#fff);pointer-events:none}
+.wsm-batch-count{position:fixed;left:12px;bottom:12px;z-index:2147483500;background:var(--dsw-alias-bg-layer-2,#fff);color:var(--dsw-alias-label-primary,#111);border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:10px;padding:8px 14px;font-size:12.5px;box-shadow:0 8px 24px rgba(0,0,0,.15)}
 .wsm-overlay{position:fixed;inset:0;background:var(--dsw-alias-bg-mask-1,rgba(0,0,0,.35));z-index:2147483000;display:flex;align-items:center;justify-content:center;font-family:inherit}
 .wsm-card{background:var(--dsw-specific-menu,#fff);color:var(--dsw-alias-label-primary,#111);
  border:1px solid var(--dsw-alias-border-l3,rgba(0,0,0,.12));border-radius:14px;min-width:340px;max-width:440px;
@@ -199,10 +218,10 @@ window.__ModuleLoader__.load({
 		const sessionRow = (el) => el?.closest?.('div[role="treeitem"][aria-selected]');
 		const headerRow = (el) => el?.closest?.('div[role="treeitem"][aria-expanded]');
 
-		function injectOverlay() {
-			const overlay = document.createElement("div");
-			overlay.className = "wsm-overlay";
-			overlay.innerHTML = `
+			function injectOverlay() {
+				const overlay = document.createElement("div");
+				overlay.className = "wsm-overlay";
+				overlay.innerHTML = `
 <div class="wsm-card" role="dialog" aria-modal="true">
   <div class="wsm-title"></div>
   <div class="wsm-row"><span class="wsm-label"></span> <b class="wsm-session"></b></div>
@@ -213,30 +232,34 @@ window.__ModuleLoader__.load({
     <button class="wsm-btn primary wsm-ok"></button>
   </div>
 </div>`;
-			const [rowS, rowT] = overlay.querySelectorAll(".wsm-row > .wsm-label");
-			rowS.textContent = t("session") + "：";
-			rowT.textContent = t("target") + "：";
-			overlay.querySelector(".wsm-title").textContent = t("confirmTitle");
-			overlay.querySelector(".wsm-hint").textContent = t("hint");
-			overlay.querySelector(".wsm-cancel").textContent = t("cancel");
-			overlay.querySelector(".wsm-ok").textContent = t("move");
-			return overlay;
-		}
+				const [rowS, rowT] = overlay.querySelectorAll(".wsm-row > .wsm-label");
+				rowS.textContent = t("session") + "：";
+				rowT.textContent = t("target") + "：";
+				overlay.querySelector(".wsm-cancel").textContent = t("cancel");
+				// 标题/正文/确认按钮文案由 confirmMove 按单条或批量场景写入
+				return overlay;
+			}
 
-		function confirmMove({ sessionId, sessionTitle, workspace }) {
-			return new Promise((resolve) => {
-				const overlay = injectOverlay();
-				overlay.querySelector(".wsm-session").textContent = sessionTitle || t("unnamedSession");
-				overlay.querySelector(".wsm-target").textContent = `${workspace.title}（${workspace.path}）`;
-				const close = (value) => { overlay.remove(); document.removeEventListener("keydown", onKey); resolve(value); };
-				const onKey = (e) => { if (e.key === "Escape") close(null); };
-				document.addEventListener("keydown", onKey);
-				overlay.addEventListener("click", (e) => { if (e.target === overlay) close(null); });
-				overlay.querySelector(".wsm-cancel").addEventListener("click", () => close(null));
-				overlay.querySelector(".wsm-ok").addEventListener("click", () => close(true));
-				document.body.appendChild(overlay);
-			});
-		}
+			function confirmMove({ sessionId, sessionTitle, workspace, batchCount }) {
+				return new Promise((resolve) => {
+					const overlay = injectOverlay();
+					const okBtn = overlay.querySelector(".wsm-ok");
+					overlay.querySelector(".wsm-title").textContent = batchCount ? t("batchConfirmTitle") : t("confirmTitle");
+					overlay.querySelector(".wsm-session").textContent = batchCount
+						? t("scannedN", { n: batchCount })
+						: (sessionTitle || t("unnamedSession"));
+					overlay.querySelector(".wsm-target").textContent = `${workspace.title}（${workspace.path}）`;
+					overlay.querySelector(".wsm-hint").textContent = batchCount ? t("batchHint", { count: batchCount }) : t("hint");
+					okBtn.textContent = batchCount ? t("batchMove") : t("move");
+					const close = (value) => { overlay.remove(); document.removeEventListener("keydown", onKey); resolve(value); };
+					const onKey = (e) => { if (e.key === "Escape") close(null); };
+					document.addEventListener("keydown", onKey);
+					overlay.addEventListener("click", (e) => { if (e.target === overlay) close(null); });
+					overlay.querySelector(".wsm-cancel").addEventListener("click", () => close(null));
+					okBtn.addEventListener("click", () => close(true));
+					document.body.appendChild(overlay);
+				});
+			}
 
 		//#region v0.3 设置页「会话修复」面板
 		const { useState, useEffect } = React;
@@ -469,7 +492,7 @@ window.__ModuleLoader__.load({
 
 		function apply(ctx) {
 			const rpcCall = (endpoint, payload) => ctx.connection.rpc.call(CHANNEL, endpoint, payload ?? {});
-			let dragging = null; // {el} —— id 在 drop 阶段解析
+			let dragging = null; // {el, els, id} —— id 在 drop 阶段解析
 			let wsCache = null; // {items, at}
 
 			ensureStyle();
@@ -491,6 +514,163 @@ window.__ModuleLoader__.load({
 				for (const el of document.querySelectorAll(".wsm-drop-hint")) el.classList.remove("wsm-drop-hint");
 			}
 
+			//#region 插件自建多选（宿主侧边栏没有多选模型）
+			// Ctrl/Cmd+点击加入/移出、Shift+点击组内范围选择；拖动任一选中行 = 整批拖动。
+			// 选中集存行元素（判定同步、零延迟）；会话 id 在点击/投放时经「分组对齐 +
+			// 标题消歧」解析：组内 DOM 行顺序对齐 workspace.sessionIds 顺序，行文本与
+			// mover.scan 的标题贪心匹配——躲开隐藏空白会话造成的纯序错位，失配退化为顺序。
+			let pickBadge = null;
+			const pickedRows = new Set();
+			let lastPickedRow = null;
+			let scanCache = null;
+
+			async function fetchScan() {
+				if (scanCache && Date.now() - scanCache.at < 5000) return scanCache.value;
+				const res = await rpcCall("mover.scan");
+				if (!res?.ok) throw new Error(res?.error?.message ?? "scan unavailable");
+				scanCache = { value: res.value, at: Date.now() };
+				return scanCache.value;
+			}
+
+			function visibleTreeitems() {
+				return [...document.querySelectorAll('div[role="treeitem"]')].filter((el) => el.offsetParent !== null);
+			}
+
+			function validPickedRows() {
+				for (const el of [...pickedRows]) {
+					if (!el.isConnected || el.offsetParent === null) pickedRows.delete(el);
+				}
+				return [...pickedRows];
+			}
+
+			function refreshPickVisuals() {
+				for (const el of document.querySelectorAll(".wsm-picked")) el.classList.remove("wsm-picked");
+				for (const el of document.querySelectorAll(".wsm-pick-badge")) el.remove();
+				const rows = validPickedRows();
+				if (rows.length === 0) {
+					pickBadge?.remove(); pickBadge = null;
+					return;
+				}
+				for (const row of rows) row.classList.add("wsm-picked");
+				pickBadge?.remove();
+				pickBadge = document.createElement("div");
+				pickBadge.className = "wsm-batch-count";
+				pickBadge.textContent = t("pickHint", { n: rows.length });
+				document.body.appendChild(pickBadge);
+			}
+
+			function clearSelection(quiet) {
+				pickedRows.clear();
+				lastPickedRow = null;
+				refreshPickVisuals();
+				if (!quiet) toast(t("pickCleared"));
+			}
+
+			/** 组标题行 → 其下可见会话行（DOM 顺序）。 */
+			function groupSessionRows(header) {
+				const all = visibleTreeitems();
+				const at = all.indexOf(header);
+				if (at < 0) return [];
+				let end = all.length;
+				for (let i = at + 1; i < all.length; i++) {
+					if (headerRow(all[i])) { end = i; break; }
+				}
+				return all.slice(at + 1, end).filter((el) => sessionRow(el));
+			}
+
+			/**
+			 * 把一组会话行对齐到 workspace.sessionIds：两指针顺序消费 + 行文本与
+			 * scan 标题贪心匹配（空白会话被官方隐藏时不至于整体错位）。结果缓存进
+			 * row.dataset.wsmId；返回 row→id 映射。
+			 */
+			async function mapGroupRows(ws, groupRows) {
+				const titleOf = new Map();
+				try {
+					const scan = await fetchScan();
+					for (const it of scan.items ?? []) titleOf.set(String(it.sessionId), String(it.title ?? "").replace(/\s+/g, " ").trim());
+				} catch { /* scan 不可用时退化为纯顺序对齐 */ }
+				const remaining = (ws.sessionIds ?? []).map(String);
+				const out = new Map();
+				for (const row of groupRows) {
+					if (remaining.length === 0) break;
+					const text = (row.textContent ?? "").replace(/\s+/g, " ").trim();
+					let hit = -1;
+					if (text && text !== t("unnamedSession")) {
+						hit = remaining.findIndex((id) => { const tt = titleOf.get(id); return tt && tt.length > 0 && (tt === text || text.includes(tt) || tt.includes(text)); });
+					}
+					if (hit < 0) hit = 0;
+					const id = remaining.splice(hit, 1)[0];
+					row.dataset.wsmId = id;
+					out.set(row, id);
+				}
+				return out;
+			}
+
+			/** 解析单个行元素（含所在组）的会话 id；解析失败返回 null。 */
+			async function resolveRowId(rowEl) {
+				if (rowEl?.dataset?.wsmId) return rowEl.dataset.wsmId;
+				const items = await fetchWorkspaces();
+				const header = (() => {
+					const all = visibleTreeitems();
+					const at = all.indexOf(rowEl);
+					for (let i = at - 1; i >= 0; i--) if (headerRow(all[i])) return all[i];
+					return null;
+				})();
+				if (!header) return null;
+				const ws = resolveWorkspace(header, items);
+				if (!ws) return null;
+				const mapping = await mapGroupRows(ws, groupSessionRows(header));
+				return mapping.get(rowEl) ?? null;
+			}
+
+			// Ctrl/Cmd+点击：加入/移出；Shift+点击：组内范围选择。普通点击不干预。
+			document.addEventListener("click", async (e) => {
+				const row = sessionRow(e.target);
+				if (!row) return;
+				const meta = e.ctrlKey || e.metaKey;
+				if (!meta && !e.shiftKey) return;
+				e.preventDefault();
+				e.stopImmediatePropagation();
+				try {
+					const items = await fetchWorkspaces();
+					const header = (() => {
+						const all = visibleTreeitems();
+						const at = all.indexOf(row);
+						for (let i = at - 1; i >= 0; i--) if (headerRow(all[i])) return all[i];
+						return null;
+					})();
+					const ws = header ? resolveWorkspace(header, items) : null;
+					if (!ws) return void toast(t("noTarget"), true);
+					const groupRows = groupSessionRows(header);
+					const mapping = await mapGroupRows(ws, groupRows);
+					if (meta) {
+						if (pickedRows.has(row)) pickedRows.delete(row);
+						else if (mapping.has(row)) { pickedRows.add(row); lastPickedRow = row; }
+					} else if (e.shiftKey && lastPickedRow && groupRows.includes(lastPickedRow)) {
+						const from = groupRows.indexOf(lastPickedRow);
+						const to = groupRows.indexOf(row);
+						for (const r of groupRows.slice(Math.min(from, to), Math.max(from, to) + 1)) {
+							if (mapping.has(r)) pickedRows.add(r);
+						}
+					} else if (mapping.has(row)) {
+						pickedRows.add(row);
+						lastPickedRow = row;
+					}
+					refreshPickVisuals();
+				} catch (err) {
+					toast(t("failed", { msg: err?.message ?? err }), true);
+				}
+			}, true);
+
+			// Esc 清空多选（输入框聚焦时不拦截，避免打断输入中的取消行为）
+			document.addEventListener("keydown", (e) => {
+				if (e.key !== "Escape" || pickedRows.size === 0) return;
+				const el = document.activeElement;
+				if (el?.tagName === "INPUT" || el?.tagName === "TEXTAREA" || el?.isContentEditable) return;
+				clearSelection();
+			});
+			//#endregion
+
 			/** 把 DOM 里第 i 个工作区标题行映射到注册表第 i 项（渲染顺序即注册表顺序）。 */
 			function headerIndex(rowEl) {
 				const rows = [...document.querySelectorAll('div[role="treeitem"][aria-expanded]')]
@@ -511,12 +691,15 @@ window.__ModuleLoader__.load({
 				return idx >= 0 && idx < items.length ? items[idx] : null;
 			}
 
-			// dragstart：只做「元素判定」——会话行拖拽开始就记录行元素；
-			// id 一律留到 drop 阶段再从 dataTransfer 解析（readonly 模式，规范保证可读）。
+			// dragstart：只做「元素判定」——拖起已多选的行 = 整批拖动，否则单选。
+			// id 一律留到 drop 阶段解析（dataTransfer 只携带拖起这一行的 id）。
 			document.addEventListener("dragstart", (e) => {
 				try {
 					const row = sessionRow(e.target);
-					dragging = row ? { el: row, id: null } : null;
+					if (!row) { dragging = null; return; }
+					const picked = validPickedRows();
+					const els = picked.length > 1 && picked.includes(row) ? picked : [row];
+					dragging = { els, el: row, id: null };
 				} catch { dragging = null; }
 			});
 
@@ -540,8 +723,8 @@ window.__ModuleLoader__.load({
 				e.preventDefault();
 				e.stopImmediatePropagation();
 
-				// drop 事件的 dataTransfer 处于 readonly 模式，读取有保证
-				let sessionId = null;
+				// drop 事件的 dataTransfer 处于 readonly 模式，读取有保证（拖起这一行的 id）
+				let draggedId = null;
 				try {
 					const transfer = e.dataTransfer;
 					const candidates = [
@@ -549,12 +732,11 @@ window.__ModuleLoader__.load({
 						transfer?.getData("text/uri-list"),
 						transfer?.getData("application/x-dsh-session-id")
 					].filter(Boolean);
-					sessionId = candidates.map((value) => String(value).trim().split(/[\r\n]/)[0]).find(Boolean) || null;
-				} catch { sessionId = null; }
-				if (!sessionId) {
-					return void toast(t("failed", { msg: `unrecognized drag payload: ${sessionId ?? "empty"}` }), true);
+					draggedId = candidates.map((value) => String(value).trim().split(/[\r\n]/)[0]).find(Boolean) || null;
+				} catch { draggedId = null; }
+				if (!draggedId) {
+					return void toast(t("failed", { msg: "unrecognized drag payload: empty" }), true);
 				}
-				const sessionTitle = rowTitle(current.el, sessionId);
 
 				let workspace = null;
 				try {
@@ -566,23 +748,67 @@ window.__ModuleLoader__.load({
 				}
 				if (!workspace) return void toast(t("noTarget"), true);
 
-				const confirmed = await confirmMove({ sessionId, sessionTitle, workspace });
+				// ---- 组装移动清单：拖起行必有 id；多选行逐个经分组对齐解析 ----
+				const picked = (current.els ?? [current.el]).filter((el) => el?.isConnected);
+				const sessions = [];
+				const seen = new Set();
+				const push = (id, title) => {
+					const key = String(id);
+					if (!key || seen.has(key)) return;
+					seen.add(key);
+					sessions.push({ sessionId: key, sessionTitle: title || t("unnamedSession") });
+				};
+				if (picked.length > 1) {
+					for (const el of picked) {
+						if (el === current.el) continue; // 拖起行用 dataTransfer 的权威 id
+						try { push(await resolveRowId(el), rowTitle(el, "")); } catch { /* 解析失败跳过 */ }
+					}
+				}
+				// 权威 id 放首位；若某选中行被误映射到同一 id 会被去重吞掉
+				push(draggedId, rowTitle(current.el, draggedId));
+
+				if (sessions.length > 50) {
+					return void toast(t("failed", { msg: `too many sessions in one batch (max 50, got ${sessions.length})` }), true);
+				}
+
+				// ---- 单选：原有确认与 mover.move 路径 ----
+				if (sessions.length === 1) {
+					const { sessionId, sessionTitle } = sessions[0];
+					const confirmed = await confirmMove({ sessionId, sessionTitle, workspace });
+					if (!confirmed) return;
+					try {
+						const res = await rpcCall("mover.move", { sessionId, sessionTitle, targetWorkspaceId: workspace.workspaceId });
+						if (res?.ok) {
+							toast(res.value?.attached ? t("selfHealed") : t("done", { title: workspace.title }));
+							try { void ctx.get?.("workspaces")?.refresh?.(); } catch { /* ignore */ }
+							if (res.value?.restartHint) setTimeout(() => toast(t("restartHint"), true), 1200);
+						} else {
+							const msg = res?.error?.message ?? "unknown";
+							const text = (/roll/i.test(msg) ? t("rolledBack", { msg }) : t("failed", { msg }));
+							toast(text, true);
+						}
+					} catch (err) {
+						toast(t("failed", { msg: err?.message ?? err }), true);
+					}
+					return;
+				}
+
+				// ---- 多选：批量确认 + mover.moveMany（逐条独立备份回滚）----
+				const confirmed = await confirmMove({ workspace, batchCount: sessions.length });
 				if (!confirmed) return;
 				try {
-					const res = await rpcCall("mover.move", { sessionId, sessionTitle, targetWorkspaceId: workspace.workspaceId });
-					if (res?.ok) {
-						toast(res.value?.attached ? t("selfHealed") : t("done", { title: workspace.title }));
-						// 主动重拉工作区基线（公开 API）：实时变更帧链路偶发不落地时，
-						// 一次 unary 拉取即可让侧边栏分组立即归位，无需手动刷新页面。
-						try {
-							void ctx.get?.("workspaces")?.refresh?.();
-						} catch { /* ignore */ }
-						if (res.value?.restartHint) setTimeout(() => toast(t("restartHint"), true), 1200);
-					} else {
+					const res = await rpcCall("mover.moveMany", { sessions, targetWorkspaceId: workspace.workspaceId });
+					if (!res?.ok) {
 						const msg = res?.error?.message ?? "unknown";
-						const text = (/roll/i.test(msg) ? t("rolledBack", { msg }) : t("failed", { msg }));
-						toast(text, true);
+						return void toast((/roll/i.test(msg) ? t("rolledBack", { msg }) : t("failed", { msg })), true);
 					}
+					const { movedCount, attachedCount, failedCount } = res.value ?? {};
+					const okCount = (movedCount ?? 0) + (attachedCount ?? 0);
+					let message = t("batchDone", { n: okCount });
+					if ((failedCount ?? 0) > 0) message += t("batchFailTail", { n: failedCount });
+					toast(message);
+					clearSelection(true);
+					try { void ctx.get?.("workspaces")?.refresh?.(); } catch { /* ignore */ }
 				} catch (err) {
 					toast(t("failed", { msg: err?.message ?? err }), true);
 				}
