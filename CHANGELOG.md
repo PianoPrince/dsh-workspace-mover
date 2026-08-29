@@ -7,7 +7,7 @@ All notable changes to this project are documented here.
 ### Added
 
 - Misfiled-session detection and one-click homing: the scan now recognizes sessions whose header cwd matches an existing workspace but whose bookkeeping lives elsewhere (clone-style movers, groups recreated after folder renames, double-accounting). The rescue panel lists each as "current group → correct group" with a "Home" button plus a "Home all" batch; homing detaches every wrong owner and attaches the matching workspace without touching files on disk.
-- Group merge: after a whole-group move via the workspace-header context menu, the plugin checks the source group and offers to delete it once it is empty — a merge in two commands, through the official workspace delete API.
+- Group merge: the workspace header's "…" menu gains a "Move whole group…" entry (injected into the official menu; the right-click interception is gone). After the move, an emptied source group can be deleted in one confirmation through the official workspace delete API.
 - `mover.repair` gains the `home` action kind; `mover.scan` items now carry `homeWorkspaceId` / `homeTitle` / `homePath` / `ownerWorkspaceIds` and a `misfiled` status with matching counts.
 - Tests 32 → 35 cases.
 
@@ -40,7 +40,7 @@ All notable changes to this project are documented here.
 ### Added
 
 - Bulk move via multi-select drag: Ctrl/Cmd+click toggles sidebar rows, Shift+click extends within a group, Esc clears; dragging any picked row moves the whole set. Selection is built by the plugin (the sidebar has no native multi-select) with a live count badge.
-- Move a whole group: right-click a workspace header to pick a target group and bulk-move its accounted sessions.
+- Move a whole group: the workspace header's "…" menu picks a target group and bulk-moves its accounted sessions. (Later versions moved this entry off the right-click menu to avoid clashing with the official menu.)
 - New RPC endpoint `mover.moveMany`: up to 50 sessions per batch, reusing the single-move pipeline — independent per-session backup/rollback, per-item error isolation, and per-move history entries (batch results stay undoable one by one).
 - Row-to-session resolution aligns each group's DOM rows with `workspace.sessionIds` order and disambiguates via `mover.scan` titles, so officially hidden blank sessions cannot shift the mapping.
 

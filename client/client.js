@@ -49,6 +49,7 @@ window.__ModuleLoader__.load({
 				homedMsg: "✓ 已归位到「{ws}」",
 				mergeDeleteConfirm: "整组 {count} 个会话已迁入「{target}」，源分组「{title}」已空。删除这个空分组吗？",
 				mergeDone: "已删除空分组「{title}」",
+				groupMoveMenu: "整组迁移…",
 				stalePath: "路径失效",
 				ungroupedBadge: "未归组",
 				unreadable: "无法读取",
@@ -128,6 +129,7 @@ window.__ModuleLoader__.load({
 				homedMsg: "✓ Homed to \"{ws}\"",
 				mergeDeleteConfirm: "{count} sessions moved to \"{target}\" and the source group \"{title}\" is now empty. Delete this empty group?",
 				mergeDone: "Deleted empty group \"{title}\"",
+				groupMoveMenu: "Move whole group…",
 				stalePath: "Stale path",
 				ungroupedBadge: "Ungrouped",
 				unreadable: "Unreadable",
@@ -1096,53 +1098,105 @@ window.__ModuleLoader__.load({
 
 			document.addEventListener("dragend", () => { dragging = null; clearHints(); });
 
-			// 工作区标题行右键：整组搬移（未分组/无法识别的行不干预，保留原生菜单）
-			document.addEventListener("contextmenu", (e) => {
+			// 整组迁移 + 分组合并：入口在官方组标题的「⋯」菜单（注入「整组迁移…」项）。
+			// 不再拦截浏览器右键——官方菜单同样在右键/⋯按钮打开，拦截会与之冲突。
+
+			/** 从指定标题行发起整组迁移；全部成员迁入且源分组已空时，提供删除空分组（= 合并）。 */
+			async function runGroupMoveFlow(header) {
+				try {
+					const items = await fetchWorkspaces();
+					const workspace = resolveWorkspace(header, items);
+					if (!workspace) return void toast(t("groupMoveEmpty"), true);
+					const ids = (workspace.sessionIds ?? []).map(String);
+					if (ids.length === 0) return void toast(t("groupMoveEmpty"), true);
+					const targetId = await confirmGroupMove({ workspace, workspaces: items, count: ids.length });
+					if (!targetId) return;
+					const res = await rpcCall("mover.moveMany", {
+						sessions: ids.map((id) => ({ sessionId: id })),
+						targetWorkspaceId: targetId
+					});
+					if (!res?.ok) {
+						const msg = res?.error?.message ?? "unknown";
+						return void toast((/roll/i.test(msg) ? t("rolledBack", { msg }) : t("failed", { msg })), true);
+					}
+					const { movedCount, attachedCount, failedCount } = res.value ?? {};
+					const okCount = (movedCount ?? 0) + (attachedCount ?? 0);
+					let message = t("batchDone", { n: okCount });
+					if ((failedCount ?? 0) > 0) message += t("batchFailTail", { n: failedCount });
+					toast(message);
+					try { void ctx.get?.("workspaces")?.refresh?.(); } catch { /* ignore */ }
+					scheduleRecencyFix(ctx, targetId, ids);
+					// 合并：全部成员迁入且源分组已空时，提供删除空分组（逐级确认，失败不影响迁移结果）
+					try {
+						const fresh = await fetchWorkspaces();
+						const source = fresh.find((w) => w.workspaceId === workspace.workspaceId);
+						const targetTitle = fresh.find((w) => w.workspaceId === targetId)?.title ?? targetId;
+						if (source && (source.sessionIds ?? []).length === 0
+							&& window.confirm(t("mergeDeleteConfirm", { count: okCount, title: workspace.title, target: targetTitle }))) {
+							const del = await ctx.get?.("workspaces")?.delete?.(workspace.workspaceId);
+							if (del?.ok) toast(t("mergeDone", { title: workspace.title }));
+							else toast(t("failed", { msg: del?.error?.message ?? "delete failed" }), true);
+						}
+					} catch { /* 合并删除为可选步骤，失败静默 */ }
+				} catch (err) {
+					toast(t("failed", { msg: err?.message ?? err }), true);
+				}
+			}
+
+			// 记录「⋯」按钮点击所在的标题行（标题行内唯一带 aria-label 的按钮），
+			// 随后出现的菜单 portal 即属于这个分组；1 秒内未出现菜单则作废。
+			let menuHeaderRow = null;
+			document.addEventListener("click", (e) => {
 				const header = headerRow(e.target);
 				if (!header) return;
-				void (async () => {
-					try {
-						const items = await fetchWorkspaces();
-						const workspace = resolveWorkspace(header, items);
-						if (!workspace) return; // 未分组或识别失败：交还原生行为
-						e.preventDefault();
-						e.stopImmediatePropagation();
-						const ids = (workspace.sessionIds ?? []).map(String);
-						if (ids.length === 0) return void toast(t("groupMoveEmpty"), true);
-						const targetId = await confirmGroupMove({ workspace, workspaces: items, count: ids.length });
-						if (!targetId) return;
-						const res = await rpcCall("mover.moveMany", {
-							sessions: ids.map((id) => ({ sessionId: id })),
-							targetWorkspaceId: targetId
-						});
-						if (!res?.ok) {
-							const msg = res?.error?.message ?? "unknown";
-							return void toast((/roll/i.test(msg) ? t("rolledBack", { msg }) : t("failed", { msg })), true);
-						}
-						const { movedCount, attachedCount, failedCount } = res.value ?? {};
-						const okCount = (movedCount ?? 0) + (attachedCount ?? 0);
-						let message = t("batchDone", { n: okCount });
-						if ((failedCount ?? 0) > 0) message += t("batchFailTail", { n: failedCount });
-						toast(message);
-						try { void ctx.get?.("workspaces")?.refresh?.(); } catch { /* ignore */ }
-						scheduleRecencyFix(ctx, targetId, ids);
-						// 合并：全部成员迁入且源分组已空时，提供删除空分组（逐级确认，失败不影响迁移结果）
-						try {
-							const fresh = await fetchWorkspaces();
-							const source = fresh.find((w) => w.workspaceId === workspace.workspaceId);
-							const targetTitle = fresh.find((w) => w.workspaceId === targetId)?.title ?? targetId;
-							if (source && (source.sessionIds ?? []).length === 0
-								&& window.confirm(t("mergeDeleteConfirm", { count: okCount, title: workspace.title, target: targetTitle }))) {
-								const del = await ctx.get?.("workspaces")?.delete?.(workspace.workspaceId);
-								if (del?.ok) toast(t("mergeDone", { title: workspace.title }));
-								else toast(t("failed", { msg: del?.error?.message ?? "delete failed" }), true);
-							}
-						} catch { /* 合并删除为可选步骤，失败静默 */ }
-					} catch (err) {
-						toast(t("failed", { msg: err?.message ?? err }), true);
+				const btn = e.target.closest?.("button[aria-label]");
+				if (!btn || !header.contains(btn)) return;
+				menuHeaderRow = header;
+				setTimeout(() => { menuHeaderRow = null; }, 1000);
+			}, true);
+
+			// 向官方菜单 portal 注入「整组迁移…」项（克隆官方项的样式类，插在危险项之前）
+			function injectGroupMoveItem(menu, items, header) {
+				const model = items[0];
+				const el = document.createElement(model.tagName === "BUTTON" ? "button" : "div");
+				el.type = "button";
+				el.className = model.className;
+				el.setAttribute("role", "menuitem");
+				el.textContent = t("groupMoveMenu");
+				el.addEventListener("click", (e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					menuHeaderRow = null;
+					// 关闭官方菜单：Escape + 菜单外部 pointerdown 双保险
+					document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+					document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+					void runGroupMoveFlow(header);
+				}, true);
+				const danger = items.find((it) => /danger/i.test(it.className || ""));
+				const anchor = danger && danger !== items[0] ? danger : items[items.length - 1];
+				anchor.before(el);
+			}
+
+			const menuObserver = new MutationObserver((muts) => {
+				if (!menuHeaderRow || !menuHeaderRow.isConnected) return;
+				for (const m of muts) {
+					for (const node of m.addedNodes) {
+						if (!(node instanceof Element)) continue;
+						const candidates = node.getAttribute?.("role") === "menu" ? [node]
+							: [...(node.querySelectorAll?.('[role="menu"]') ?? [])];
+						const menu = candidates[candidates.length - 1];
+						if (!menu || menu.dataset.wsmInjected) continue;
+						const items = [...menu.querySelectorAll('[role="menuitem"]')];
+						if (items.length < 2) continue;
+						menu.dataset.wsmInjected = "1";
+						const header = menuHeaderRow;
+						menuHeaderRow = null;
+						injectGroupMoveItem(menu, items, header);
+						return;
 					}
-				})();
+				}
 			});
+			menuObserver.observe(document.body, { childList: true, subtree: true });
 
 			// 诊断句柄：控制台用 window.__wsmDebug 检查「最近更新」排序修复通道（排障用）
 			try {

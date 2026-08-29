@@ -40,7 +40,7 @@
 DeepSeek Harness's sidebar supports drag-to-reorder within a workspace, but dropping a session onto **another workspace** is silently ignored—the official RPC only exposes within-workspace `insertSessionBefore` and has no cross-workspace move endpoint. This plugin fills that gap:
 
 - **🖱️ Drag & drop**: Drag any idle session row onto a target workspace title row; a confirmation dialog shows the destination path—one click to move
-- **📦 Bulk move**: Ctrl/Shift+click to multi-select rows (plugin-built selection with a live count badge), then drag any picked row to move the whole set; right-click a workspace header to move an entire group. Up to 50 per batch with independent per-session backup/rollback
+- **📦 Bulk move**: Ctrl/Shift+click to multi-select rows (plugin-built selection with a live count badge), then drag any picked row to move the whole set; or use a workspace header's "…" menu → "Move whole group…". Up to 50 per batch with independent per-session backup/rollback
 - **🚚 True move**: Physically relocates the original `session.jsonl.zstd` archive, rewrites the header `cwd`, and updates the workspace registry—the session id and full history are **preserved as-is**, with no duplicates, no context re-injection, and **zero token cost**
 - **🏠 Move-home wizard**: After a project folder was moved or renamed on disk, redirect the stale workspace **in place** to its new location with one click—workspace id, title, order and archive flags all preserved; every session under it, including stranded ones on the old path, migrates as-is in one batch. Running sessions skip automatically; an interrupted run resumes with only what remains.
 - **🛟 Orphan session rescue** (Settings → "Session Rescue" panel): Scans all session archives on disk and sorts them into—
@@ -49,7 +49,7 @@ DeepSeek Harness's sidebar supports drag-to-reorder within a workspace, but drop
   - **Misfiled**: sessions whose real folder belongs to group B but that are recorded under group A (clone-style movers, groups recreated after a folder rename); the matching group is identified automatically — home them one by one or all at once, bookkeeping only, files untouched
   - **Ghosts**: ids present in the registry whose archives are missing on disk (read-only notice)
   - All go through the same backup + rollback pipeline
-- **🧹 Group merge**: after right-click-moving a whole group into a target, the emptied source group can be deleted right away — a merge in two commands
+- **🧹 Group merge**: move a whole group into a target via the header's "…" menu, then delete the emptied source group right away — a merge in two commands
 - **⏪ Move history & undo**: Keeps the last 100 cross-workspace moves; bulk moves aggregate into one entry with whole-set undo, and undo generates its own backup with rollback protection
 - **🏷️ Session titles first**: Confirmation dialogs, rescue lists, and recent moves show session titles when available, falling back to "Untitled session"
 
@@ -157,7 +157,7 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 
 1. **Ctrl/Cmd+click** sidebar rows to toggle selection (**Shift+click** extends within a group); a corner badge tracks the count, **Esc** clears;
 2. Drag any picked row onto the target workspace title row; the confirmation shows the batch size → click "Move all";
-3. Or **right-click a workspace header** and pick a target group to move the whole group; if that empties the source group, you can delete it right after (a merge in two commands);
+3. Or use a workspace header's **"…" menu → "Move whole group…"** to move the group; if that empties the source group, you can delete it right after (a merge in two commands);
 4. Every session is backed up and rolled back independently—one failure (e.g. running) never blocks the rest; the toast summarizes moved vs skipped.
 
 ### Move-home wizard
@@ -188,7 +188,7 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 ### v0.7.0 · 2026-08-28
 
 - Session Rescue gains "Misfiled" detection: sessions whose real folder belongs to group B while recorded under group A are listed with their matching group — home them one by one or all at once, bookkeeping only
-- Group merge: after right-click-moving a whole group into a target, the emptied source group can be deleted in one confirmation
+- Group merge: the header "…" menu gains a "Move whole group…" entry; once the source group is emptied by the move, it can be deleted in one confirmation
 - The scan summary and panel blocks surface misfiled counts
 
 ### v0.6.3 · 2026-08-28
@@ -209,7 +209,7 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 
 ### v0.6.0 · 2026-08-28
 
-- Bulk move: plugin-built sidebar multi-select (Ctrl/Shift+click, Esc to clear, count badge) — drag any picked row to move the whole set; right-click a workspace header to move an entire group
+- Bulk move: plugin-built sidebar multi-select (Ctrl/Shift+click, Esc to clear, count badge) — drag any picked row to move the whole set; a workspace header's "…" menu moves an entire group
 - New `mover.moveMany` endpoint: up to 50 per batch, reusing the single-move pipeline — independent per-session backup/rollback, error isolation, and move history entries (undoable)
 - Tests 27 → 30 cases
 
