@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.6.3] - 2026-08-28
+
+### Fixed
+
+- **Critical**: multi-select drag could move a session the user never picked. Row-to-id resolution previously aligned visible rows against `workspace.sessionIds` by order; hidden blank/archived members occupy slots without rows, shifting every subsequent pairing. Ids now come from the row's own React props (`SessionNodeItem` `node.id` — the same value the official dragstart writes into the drag payload), with the alignment kept only as a fallback.
+- The "Recently updated" re-sort after moves never executed in the field: the v0.6.1 fiber walk found nothing and v0.6.2 called `workspaces.list()`, which does not exist on the client-side service. Membership is now derived from the order account itself plus the moved session ids, and the exact recency order is written through the official store action — verified end-to-end through the real drop pipeline.
+
 ## [0.6.2] - 2026-08-28
 
 ### Fixed

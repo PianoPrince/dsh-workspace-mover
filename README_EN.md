@@ -112,6 +112,13 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 | **Settings → Session Rescue: recover orphaned and unregistered sessions** | |
 | ![Session rescue settings panel](docs/media/setting_dialogue_repair.png) | |
 
+### Bulk move · multi-select drag
+
+| |
+|---|
+| **Ctrl+click to pick sessions (the currently open one is included automatically); a count badge appears bottom-left. Drag onto a target workspace title row to move them all; Esc clears** |
+| ![Bulk move selection: three sessions highlighted, count badge bottom-left](docs/media/batch_move_selection.png) |
+
 ### Move-home wizard · full field run
 
 A complete record of a real repair: the `Test1` folder was renamed to `Test2` on disk, then the wizard restored the workspace in place.
@@ -174,6 +181,12 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 - **Move history**: stored at `$DSH_HOME/workspace-mover/history.json`, capped at the last 100 entries; undo goes straight back while the original workspace still exists, otherwise you are asked to choose a new target group explicitly.
 
 ## 🆕 Recent Updates
+
+### v0.6.3 · 2026-08-28
+
+- **Critical fix**: multi-select drag could move a session the user never picked — hidden blank/archived members occupy slots in the membership array without rendered rows, shifting the order alignment from the first gap. Row-to-id resolution now reads the row's own React props (the same `node.id` the official dragstart writes into the drag payload); alignment remains only as a fallback
+- **Fixed the "recently updated" re-sort never working in the field**: the v0.6.1 fiber walk found nothing and v0.6.2 called an API that doesn't exist on the client service. Membership is now derived from the order account plus the moved session ids and written through the official store action — verified end-to-end through the real drop pipeline
+- New field screenshot of bulk multi-select
 
 ### v0.6.2 · 2026-08-28
 
