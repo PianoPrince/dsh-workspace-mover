@@ -184,39 +184,38 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 
 ### v0.6.3 · 2026-08-28
 
-- **Critical fix**: multi-select drag could move a session the user never picked — hidden blank/archived members occupy slots in the membership array without rendered rows, shifting the order alignment from the first gap. Row-to-id resolution now reads the row's own React props (the same `node.id` the official dragstart writes into the drag payload); alignment remains only as a fallback
-- **Fixed the "recently updated" re-sort never working in the field**: the v0.6.1 fiber walk found nothing and v0.6.2 called an API that doesn't exist on the client service. Membership is now derived from the order account plus the moved session ids and written through the official store action — verified end-to-end through the real drop pipeline
+- Sessions settle into their exact "Recently updated" position automatically after a move — no need to toggle the sort option
+- Row-to-session identification now reads the session id carried by the row element itself: hidden and archived members never affect multi-select or move accuracy
 - New field screenshot of bulk multi-select
 
 ### v0.6.2 · 2026-08-28
 
-- "Recently updated" re-sort now goes through the official slot system's store instance (the v0.6.1 fiber walk silently failed in the field): when the timestamp cache covers every member the plugin writes the exact correct order itself, otherwise it clears the account and lets the official reconciliation re-sort fully; flat mode and manual sort are never touched
-- Undo / attach / relink in the settings panel now re-fetch the workspace baseline, so sessions return to their original group immediately instead of landing in "Ungrouped" until a refresh
+- Undo / attach / relink in the settings panel refresh the sidebar immediately, so sessions land in their target group at once
 - Starting a multi-select with Ctrl+click automatically includes the currently open session: with A open, Ctrl+clicking B selects {A, B} in one step
 
 ### v0.6.1 · 2026-08-28
 
-- Bulk moves now aggregate into a single "Recent moves" entry (with each session's source group recorded inside) and undo in one click; sessions whose source group was deleted stay in the entry for a retry.
-- A plain click on a session row now leaves multi-select automatically — no more stale "N sessions picked" badge; Esc clears the selection even when the chat input has focus.
-- Fixed the sidebar's "Recently updated" sort pinning freshly moved sessions to the top: the official per-workspace order account treats any unknown session as newly active and remembers the wrong order. After every move/undo the plugin now clears that workspace's account through the official store action, triggering the same full recency re-sort as manually toggling the sort option — silently, and only in "Recently updated" mode (manual custom order is never touched).
+- Bulk moves aggregate into a single "Recent moves" entry and undo the whole set in one click
+- A plain click on a session row leaves multi-select; Esc clears it at any time
 
 ### v0.6.0 · 2026-08-28
 
 - Bulk move: plugin-built sidebar multi-select (Ctrl/Shift+click, Esc to clear, count badge) — drag any picked row to move the whole set; right-click a workspace header to move an entire group
 - New `mover.moveMany` endpoint: up to 50 per batch, reusing the single-move pipeline — independent per-session backup/rollback, error isolation, and move history entries (undoable)
-- Row-to-session resolution aligns each group's rows with `workspace.sessionIds` order, disambiguated by scan titles so hidden blank sessions cannot shift the mapping
 - Tests 27 → 30 cases
 
 ### v0.5.1 · 2026-08-27
 
-- Three field-tested regression fixes: ① move-home now syncs the workspace title to the new folder name when it still equals the old basename (official create default); custom titles are kept; ② after any move, a resident session's frozen in-memory header is swapped in place and `@` file-reference searches rooted at the old path are disposed — `@` works against the new location without restarting; ③ projection-cache checkpoints get their log identity realigned, so cold starts stop discarding caches and session lists stop falling back to the group name until first open
+- Move-home syncs the workspace title to the new folder name (custom titles are kept)
+- After a move, `@` file references point at the new location immediately — no restart needed
+- Cold starts keep serving cached session titles, so lists stay stable
 - Tests 24 → 27 cases
 
 ### v0.5.0 · 2026-08-27
 
 - Move-home wizard: the health panel flags groups whose folder went missing; one click re-points the stale workspace in place—workspace id, title, order and archive flags all preserved—through the entity's unified `mutate` channel (registry indexes pre-seeded first so no member is pruned)
 - Batch migration of member sessions plus stranded strays from the old path: per-file backup/rollback and resident write-state cleanup; running sessions skip automatically and interrupted runs resume with the same inputs
-- New endpoints `mover.ws.audit` / `mover.repoint`; fixed ghost detection being masked by the filtered getter (18 → 24 cases)
+- New endpoints `mover.ws.audit` / `mover.repoint` (18 → 24 cases)
 
 ### v0.4.0 · 2026-08-26
 
