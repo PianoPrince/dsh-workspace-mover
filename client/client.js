@@ -229,32 +229,89 @@ window.__ModuleLoader__.load({
 		const headerRow = (el) => el?.closest?.('div[role="treeitem"][aria-expanded]');
 
 		/**
+		 * 解析官方侧边栏的视图 store 实例（含 actions.syncSessionOrderAccount 与 getSnapshot）。
+		 * 正式通道：sidebar.workspaces 槽位注册项自带 store 句柄，经 ctx.slots.resolveStore 取实例；
+		 * 槽位通道不可用时兜底走 React fiber 爬升找官方组件 props。全部 fail-soft。
+		 */
+		function resolveViewStore(ctx) {
+			try {
+				const entry = ctx.slots?.entries?.("sidebar.workspaces")?.find?.((e) => e?.store);
+				if (entry) return ctx.slots.resolveStore(entry.store);
+			} catch { /* ignore */ }
+			try {
+				const anchor = document.querySelector('div[role="treeitem"][aria-expanded]');
+				const fiberKey = anchor && Object.keys(anchor).find((k) => k.startsWith("__reactFiber$"));
+				if (!fiberKey) return null;
+				for (let fiber = anchor[fiberKey]; fiber; fiber = fiber.return) {
+					const p = fiber.memoizedProps;
+					if (p && typeof p.syncSessionOrderAccount === "function") {
+						return {
+							actions: { syncSessionOrderAccount: p.syncSessionOrderAccount },
+							getSnapshot: () => ({
+								orderBy: p.orderBy,
+								groupBy: undefined,
+								sessionOrderByAccount: p.sessionOrderByAccount,
+								sessionUpdatedAtByAccount: p.sessionUpdatedAtByAccount
+							})
+						};
+					}
+				}
+			} catch { /* ignore */ }
+			return null;
+		}
+
+		/** 复刻官方 compareSessionRecency：updatedAt 降序，id 升序平局裁决。 */
+		function recencyCompare(stamps) {
+			return (a, b) => {
+				const av = stamps?.[a] ?? Number.NEGATIVE_INFINITY;
+				const bv = stamps?.[b] ?? Number.NEGATIVE_INFINITY;
+				if (av !== bv) return bv - av;
+				return a < b ? -1 : 1;
+			};
+		}
+
+		/**
 		 * 官方侧边栏为每个工作区维护「最近更新」排序账本（sessionOrderByAccount / sessionUpdatedAtByAccount）；
 		 * 新移入的会话必然不在账本里，会被官方"活跃提升"策略错误置顶，且账本记住该顺序。
-		 * 清空该工作区账本即可触发官方的全量按真实 updatedAt 重排（等价于用户手动切一次排序）。
-		 * 通过 React fiber 拿到官方组件的 store action 调用；结构变化时静默跳过（fail-soft）。
+		 * 经官方 store action 修正该工作区的账本：时间戳齐全时直接写入正确的最近更新顺序，
+		 * 否则清空账本让官方 reconcile 全量重排（等价于用户手动切换一次排序）。
 		 */
-		function scheduleRecencyFix(workspaceId) {
+		function scheduleRecencyFix(ctx, workspaceId) {
 			if (!workspaceId) return;
-			const wipe = () => {
+			const attempt = () => {
 				try {
-					const anchor = document.querySelector('div[role="treeitem"][aria-expanded]');
-					const fiberKey = anchor && Object.keys(anchor).find((k) => k.startsWith("__reactFiber$"));
-					if (!fiberKey) return;
-					let props = null;
-					for (let fiber = anchor[fiberKey]; fiber; fiber = fiber.return) {
-						const p = fiber.memoizedProps;
-						if (p && typeof p.syncSessionOrderAccount === "function") { props = p; break; }
+					const view = resolveViewStore(ctx);
+					if (!view) {
+						console.debug("[workspace-mover] recency fix: view store not found");
+						return;
 					}
-					// 手动排序没有"提升"行为；此时清账本反而会丢用户手动拖拽的自定义顺序
-					if (!props || props.orderBy !== "updated") return;
-					props.syncSessionOrderAccount(workspaceId, [], {});
-				} catch { /* ignore */ }
+					const snap = view.getSnapshot();
+					// flat 模式没有跨组"提升"行为；手动排序绝不能动用户自定义顺序
+					if (snap.orderBy !== "updated" || snap.groupBy === "flat") return;
+					const ws = (Array.isArray(ctx.get?.("workspaces")?.list?.()) ? ctx.get("workspaces").list() : [])
+						.find((w) => w?.workspaceId === workspaceId);
+					const ids = Array.isArray(ws?.sessionIds) ? ws.sessionIds : null;
+					const stamps = snap.sessionUpdatedAtByAccount?.[workspaceId];
+					if (ids && ids.length > 0 && stamps && ids.every((id) => Object.hasOwn(stamps, id))) {
+						// 时间戳齐全：直接写入正确的「最近更新」顺序
+						const order = [...ids].sort(recencyCompare(stamps));
+						const updatedAt = {};
+						for (const id of ids) updatedAt[id] = stamps[id];
+						view.actions.syncSessionOrderAccount(workspaceId, order, updatedAt);
+						console.debug("[workspace-mover] recency fix: rewrote order for", workspaceId);
+					} else {
+						// 变更帧尚未处理完（账本缺新会话的时间戳）：清空账本，官方 reconcile 全量重排
+						view.actions.syncSessionOrderAccount(workspaceId, [], {});
+						console.debug("[workspace-mover] recency fix: wiped account for", workspaceId);
+					}
+				} catch (err) {
+					console.debug("[workspace-mover] recency fix failed:", err?.message ?? err);
+				}
 			};
-			// 工作区变更帧可能晚于 RPC 返回到达，首次清空会被旧数据重新播种；多清几次覆盖竞态
-			wipe();
-			setTimeout(wipe, 400);
-			setTimeout(wipe, 1200);
+			// 工作区变更帧可能晚于 RPC 返回；多试几次覆盖竞态，最后一试必然在帧落地后
+			attempt();
+			setTimeout(attempt, 400);
+			setTimeout(attempt, 1200);
 		}
 
 			function injectOverlay() {
@@ -355,7 +412,7 @@ window.__ModuleLoader__.load({
 			return h("div", { className: "wsm-caption" }, text, help ? h(HelpDot, { text: help }) : null);
 		}
 
-		function RescuePanel({ rpcCall }) {
+		function RescuePanel({ rpcCall, ctx }) {
 			const [scan, setScan] = useState(null);
 			const [workspaces, setWorkspaces] = useState([]);
 			const [audit, setAudit] = useState(null);
@@ -370,6 +427,10 @@ window.__ModuleLoader__.load({
 				if (!res?.ok) throw new Error(res?.error?.message ?? endpoint);
 				return res.value;
 			};
+
+			// 面板改动落账后主动重拉工作区基线（公开 API）：实时变更帧链路偶发不落地，
+			// 不重拉的话侧边栏可能把会话先归到「未分组」，要刷新网页才归位。
+			const refreshWorkspaces = () => { try { ctx?.get?.("workspaces")?.refresh?.(); } catch { /* ignore */ } };
 
 			const runScan = async () => {
 				setBusy(true);
@@ -398,6 +459,8 @@ window.__ModuleLoader__.load({
 					if (!res?.ok) throw new Error(res?.error?.message ?? "move failed");
 					const wsTitle = workspaces.find((w) => w.workspaceId === target)?.title ?? "";
 					setNote(res.value?.attached ? t("selfHealed") : t("relinked", { title: wsTitle }));
+					refreshWorkspaces();
+					scheduleRecencyFix(ctx, target);
 					await runScan();
 				} catch (err) {
 					setNote(t("failed", { msg: err?.message ?? err }));
@@ -415,6 +478,8 @@ window.__ModuleLoader__.load({
 					if (!r?.ok) throw new Error(r?.error ?? "attach failed");
 					const wsTitle = workspaces.find((w) => w.workspaceId === r.attachedTo)?.title ?? r.attachedTo ?? "";
 					setNote(t("attachedMsg", { ws: wsTitle }));
+					refreshWorkspaces();
+					scheduleRecencyFix(ctx, r.attachedTo);
 					await runScan();
 				} catch (err) {
 					setNote(t("failed", { msg: err?.message ?? err }));
@@ -437,7 +502,8 @@ window.__ModuleLoader__.load({
 					const targets = entry.batch
 						? (entry.sessions ?? []).filter((s) => movedBack.has(String(s.sessionId))).map((s) => s.sourceWorkspaceId)
 						: [result?.to?.workspaceId ?? entry.sourceWorkspaceId];
-					for (const id of new Set(targets.filter(Boolean))) scheduleRecencyFix(id);
+					for (const id of new Set(targets.filter(Boolean))) scheduleRecencyFix(ctx, id);
+					refreshWorkspaces();
 					await runScan();
 				} catch (err) {
 					setNote(t("failed", { msg: err?.message ?? err }));
@@ -570,7 +636,7 @@ window.__ModuleLoader__.load({
 				id: "workspace-mover-rescue",
 				order: 60,
 				label: () => t("rescueSection"),
-				inject: () => ({ rpcCall })
+				inject: () => ({ rpcCall, ctx })
 			}, RescuePanel));
 		}
 		//#endregion
@@ -737,7 +803,17 @@ window.__ModuleLoader__.load({
 					const mapping = await mapGroupRows(ws, groupRows);
 					if (meta) {
 						if (pickedRows.has(row)) pickedRows.delete(row);
-						else if (mapping.has(row)) { pickedRows.add(row); lastPickedRow = row; }
+						else if (mapping.has(row)) {
+							// 开始新一轮选择时自动带上当前打开的会话（官方仅给打开行标 aria-selected），
+							// 免得"正开着 A、Ctrl+点 B"要多点一次 A
+							if (pickedRows.size === 0) {
+								const open = [...document.querySelectorAll('div[role="treeitem"][aria-selected="true"]')]
+									.find((el) => el.offsetParent !== null && el !== row);
+								if (open) pickedRows.add(open);
+							}
+							pickedRows.add(row);
+							lastPickedRow = row;
+						}
 					} else if (e.shiftKey && lastPickedRow && groupRows.includes(lastPickedRow)) {
 						const from = groupRows.indexOf(lastPickedRow);
 						const to = groupRows.indexOf(row);
@@ -871,7 +947,7 @@ window.__ModuleLoader__.load({
 						if (res?.ok) {
 							toast(res.value?.attached ? t("selfHealed") : t("done", { title: workspace.title }));
 							try { void ctx.get?.("workspaces")?.refresh?.(); } catch { /* ignore */ }
-							scheduleRecencyFix(workspace.workspaceId);
+							scheduleRecencyFix(ctx, workspace.workspaceId);
 						if (res.value?.restartHint) setTimeout(() => toast(t("restartHint"), true), 1200);
 						} else {
 							const msg = res?.error?.message ?? "unknown";
@@ -900,7 +976,7 @@ window.__ModuleLoader__.load({
 					toast(message);
 					clearSelection(true);
 					try { void ctx.get?.("workspaces")?.refresh?.(); } catch { /* ignore */ }
-					scheduleRecencyFix(workspace.workspaceId);
+					scheduleRecencyFix(ctx, workspace.workspaceId);
 				} catch (err) {
 					toast(t("failed", { msg: err?.message ?? err }), true);
 				}
@@ -937,7 +1013,7 @@ window.__ModuleLoader__.load({
 						if ((failedCount ?? 0) > 0) message += t("batchFailTail", { n: failedCount });
 						toast(message);
 						try { void ctx.get?.("workspaces")?.refresh?.(); } catch { /* ignore */ }
-						scheduleRecencyFix(targetId);
+						scheduleRecencyFix(ctx, targetId);
 					} catch (err) {
 						toast(t("failed", { msg: err?.message ?? err }), true);
 					}

@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [0.6.2] - 2026-08-28
+
+### Fixed
+
+- "Recently updated" re-sort after moves is now applied through the official slot system's store instance (`ctx.slots.resolveStore` on the `sidebar.workspaces` registration) instead of walking React fibers, which silently failed in the field. When the account's timestamp cache covers every member, the plugin writes the exact correct recency order itself (replicating the official comparator); otherwise it clears the account so the official reconciliation performs a full re-sort. Flat mode and manual sort are never touched.
+- Undoing a move from the settings panel now re-fetches the workspace baseline, so the session returns to its original group immediately instead of landing in "Ungrouped" until a page refresh (also applied to relink and attach).
+- Starting a multi-select with Ctrl+click now automatically includes the currently open session (the one row the sidebar marks with `aria-selected`), so "open A, Ctrl+click B" selects both in one step.
+
 ## [0.6.1] - 2026-08-28
 
 ### Fixed

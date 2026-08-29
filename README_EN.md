@@ -175,6 +175,12 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 
 ## 🆕 Recent Updates
 
+### v0.6.2 · 2026-08-28
+
+- "Recently updated" re-sort now goes through the official slot system's store instance (the v0.6.1 fiber walk silently failed in the field): when the timestamp cache covers every member the plugin writes the exact correct order itself, otherwise it clears the account and lets the official reconciliation re-sort fully; flat mode and manual sort are never touched
+- Undo / attach / relink in the settings panel now re-fetch the workspace baseline, so sessions return to their original group immediately instead of landing in "Ungrouped" until a refresh
+- Starting a multi-select with Ctrl+click automatically includes the currently open session: with A open, Ctrl+clicking B selects {A, B} in one step
+
 ### v0.6.1 · 2026-08-28
 
 - Bulk moves now aggregate into a single "Recent moves" entry (with each session's source group recorded inside) and undo in one click; sessions whose source group was deleted stay in the entry for a retry.
