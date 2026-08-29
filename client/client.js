@@ -273,10 +273,11 @@ window.__ModuleLoader__.load({
 		/**
 		 * 官方侧边栏为每个工作区维护「最近更新」排序账本（sessionOrderByAccount / sessionUpdatedAtByAccount）；
 		 * 新移入的会话必然不在账本里，会被官方"活跃提升"策略错误置顶，且账本记住该顺序。
-		 * 经官方 store action 修正该工作区的账本：时间戳齐全时直接写入正确的最近更新顺序，
+		 * 经官方 store action 修正该工作区的账本：成员时间戳齐全时直接写入正确的最近更新顺序
+		 * （成员 = 账本现有顺序 ∪ 本次移入的会话；官方同步后账本时间戳覆盖全部非空白成员），
 		 * 否则清空账本让官方 reconcile 全量重排（等价于用户手动切换一次排序）。
 		 */
-		function scheduleRecencyFix(ctx, workspaceId) {
+		function scheduleRecencyFix(ctx, workspaceId, movedIds = []) {
 			if (!workspaceId) return;
 			const attempt = () => {
 				try {
@@ -288,15 +289,13 @@ window.__ModuleLoader__.load({
 					const snap = view.getSnapshot();
 					// flat 模式没有跨组"提升"行为；手动排序绝不能动用户自定义顺序
 					if (snap.orderBy !== "updated" || snap.groupBy === "flat") return;
-					const ws = (Array.isArray(ctx.get?.("workspaces")?.list?.()) ? ctx.get("workspaces").list() : [])
-						.find((w) => w?.workspaceId === workspaceId);
-					const ids = Array.isArray(ws?.sessionIds) ? ws.sessionIds : null;
 					const stamps = snap.sessionUpdatedAtByAccount?.[workspaceId];
-					if (ids && ids.length > 0 && stamps && ids.every((id) => Object.hasOwn(stamps, id))) {
+					const members = [...new Set([...(snap.sessionOrderByAccount?.[workspaceId] ?? []), ...movedIds])];
+					if (members.length > 0 && stamps && members.every((id) => Object.hasOwn(stamps, id))) {
 						// 时间戳齐全：直接写入正确的「最近更新」顺序
-						const order = [...ids].sort(recencyCompare(stamps));
+						const order = [...members].sort(recencyCompare(stamps));
 						const updatedAt = {};
-						for (const id of ids) updatedAt[id] = stamps[id];
+						for (const id of members) updatedAt[id] = stamps[id];
 						view.actions.syncSessionOrderAccount(workspaceId, order, updatedAt);
 						console.debug("[workspace-mover] recency fix: rewrote order for", workspaceId);
 					} else {
@@ -460,7 +459,7 @@ window.__ModuleLoader__.load({
 					const wsTitle = workspaces.find((w) => w.workspaceId === target)?.title ?? "";
 					setNote(res.value?.attached ? t("selfHealed") : t("relinked", { title: wsTitle }));
 					refreshWorkspaces();
-					scheduleRecencyFix(ctx, target);
+					scheduleRecencyFix(ctx, target, [item.sessionId]);
 					await runScan();
 				} catch (err) {
 					setNote(t("failed", { msg: err?.message ?? err }));
@@ -479,7 +478,7 @@ window.__ModuleLoader__.load({
 					const wsTitle = workspaces.find((w) => w.workspaceId === r.attachedTo)?.title ?? r.attachedTo ?? "";
 					setNote(t("attachedMsg", { ws: wsTitle }));
 					refreshWorkspaces();
-					scheduleRecencyFix(ctx, r.attachedTo);
+					scheduleRecencyFix(ctx, r.attachedTo, [item.sessionId]);
 					await runScan();
 				} catch (err) {
 					setNote(t("failed", { msg: err?.message ?? err }));
@@ -497,12 +496,23 @@ window.__ModuleLoader__.load({
 					let noteText = t("undone");
 					if ((result?.failedCount ?? 0) > 0) noteText += t("batchUndoPartial", { n: result.failedCount });
 					setNote(noteText);
-					// 撤回同样会把会话变回目标分组的"账本新面孔"，一并修正「最近更新」排序
+					// 撤回同样会把会话变回原分组的"账本新面孔"，一并修正「最近更新」排序
 					const movedBack = new Set((result?.results ?? []).filter((r) => r.ok).map((r) => String(r.sessionId)));
-					const targets = entry.batch
-						? (entry.sessions ?? []).filter((s) => movedBack.has(String(s.sessionId))).map((s) => s.sourceWorkspaceId)
-						: [result?.to?.workspaceId ?? entry.sourceWorkspaceId];
-					for (const id of new Set(targets.filter(Boolean))) scheduleRecencyFix(ctx, id);
+					const perWorkspace = new Map();
+					const addBack = (wid, sids) => {
+						if (!wid) return;
+						const arr = perWorkspace.get(wid) ?? [];
+						for (const sid of sids) arr.push(String(sid));
+						perWorkspace.set(wid, arr);
+					};
+					if (entry.batch) {
+						for (const s of entry.sessions ?? []) {
+							if (movedBack.has(String(s.sessionId))) addBack(s.sourceWorkspaceId, [s.sessionId]);
+						}
+					} else {
+						addBack(result?.to?.workspaceId ?? entry.sourceWorkspaceId, [result?.sessionId ?? entry.sessionId]);
+					}
+					for (const [wid, sids] of perWorkspace) scheduleRecencyFix(ctx, wid, sids);
 					refreshWorkspaces();
 					await runScan();
 				} catch (err) {
@@ -733,8 +743,30 @@ window.__ModuleLoader__.load({
 			}
 
 			/**
+			 * 行元素 → 会话 id（权威通道）：官方 SessionNodeItem 渲染行时把整个
+			 * node 对象（含 id）作为 prop 传入，dragstart 写入 dataTransfer 的
+			 * 正是这个 node.id。沿 fiber 爬升取最近一个带 node.id 的组件 props，
+			 * 不依赖任何顺序对齐——空白/归档会话被官方隐藏也不会错位。
+			 */
+			function rowSessionId(rowEl) {
+				try {
+					const fiberKey = Object.keys(rowEl).find((k) => k.startsWith("__reactFiber$"));
+					if (!fiberKey) return null;
+					for (let fiber = rowEl[fiberKey]; fiber; fiber = fiber.return) {
+						const node = fiber.memoizedProps?.node;
+						if (node && typeof node.id === "string" && node.id.length > 0
+							&& (node.blank !== undefined || node.updatedAt !== undefined)) {
+							return node.id;
+						}
+					}
+				} catch { /* ignore */ }
+				return null;
+			}
+
+			/**
 			 * 把一组会话行对齐到 workspace.sessionIds：两指针顺序消费 + 行文本与
-			 * scan 标题贪心匹配（空白会话被官方隐藏时不至于整体错位）。结果缓存进
+			 * scan 标题贪心匹配。仅作 rowSessionId 不可用时的兜底（官方隐藏空白/
+			 * 归档会话时可能错位，v0.6.x 的"移错会话"即源于此）。结果缓存进
 			 * row.dataset.wsmId；返回 row→id 映射。
 			 */
 			async function mapGroupRows(ws, groupRows) {
@@ -760,8 +792,10 @@ window.__ModuleLoader__.load({
 				return out;
 			}
 
-			/** 解析单个行元素（含所在组）的会话 id；解析失败返回 null。 */
+			/** 解析单个行元素（含所在组）的会话 id；权威走 rowSessionId，失败退回组内对齐。 */
 			async function resolveRowId(rowEl) {
+				const authoritative = rowSessionId(rowEl);
+				if (authoritative) return authoritative;
 				if (rowEl?.dataset?.wsmId) return rowEl.dataset.wsmId;
 				const items = await fetchWorkspaces();
 				const header = (() => {
@@ -801,9 +835,9 @@ window.__ModuleLoader__.load({
 					if (!ws) return void toast(t("noTarget"), true);
 					const groupRows = groupSessionRows(header);
 					const mapping = await mapGroupRows(ws, groupRows);
-					if (meta) {
-						if (pickedRows.has(row)) pickedRows.delete(row);
-						else if (mapping.has(row)) {
+				if (meta) {
+					if (pickedRows.has(row)) pickedRows.delete(row);
+					else if (mapping.has(row) || rowSessionId(row)) {
 							// 开始新一轮选择时自动带上当前打开的会话（官方仅给打开行标 aria-selected），
 							// 免得"正开着 A、Ctrl+点 B"要多点一次 A
 							if (pickedRows.size === 0) {
@@ -818,9 +852,9 @@ window.__ModuleLoader__.load({
 						const from = groupRows.indexOf(lastPickedRow);
 						const to = groupRows.indexOf(row);
 						for (const r of groupRows.slice(Math.min(from, to), Math.max(from, to) + 1)) {
-							if (mapping.has(r)) pickedRows.add(r);
-						}
-					} else if (mapping.has(row)) {
+						if (mapping.has(r) || rowSessionId(r)) pickedRows.add(r);
+					}
+				} else if (mapping.has(row) || rowSessionId(row)) {
 						pickedRows.add(row);
 						lastPickedRow = row;
 					}
@@ -947,8 +981,8 @@ window.__ModuleLoader__.load({
 						if (res?.ok) {
 							toast(res.value?.attached ? t("selfHealed") : t("done", { title: workspace.title }));
 							try { void ctx.get?.("workspaces")?.refresh?.(); } catch { /* ignore */ }
-							scheduleRecencyFix(ctx, workspace.workspaceId);
-						if (res.value?.restartHint) setTimeout(() => toast(t("restartHint"), true), 1200);
+							scheduleRecencyFix(ctx, workspace.workspaceId, [sessionId]);
+							if (res.value?.restartHint) setTimeout(() => toast(t("restartHint"), true), 1200);
 						} else {
 							const msg = res?.error?.message ?? "unknown";
 							const text = (/roll/i.test(msg) ? t("rolledBack", { msg }) : t("failed", { msg }));
@@ -976,7 +1010,7 @@ window.__ModuleLoader__.load({
 					toast(message);
 					clearSelection(true);
 					try { void ctx.get?.("workspaces")?.refresh?.(); } catch { /* ignore */ }
-					scheduleRecencyFix(ctx, workspace.workspaceId);
+					scheduleRecencyFix(ctx, workspace.workspaceId, sessions.map((s) => s.sessionId));
 				} catch (err) {
 					toast(t("failed", { msg: err?.message ?? err }), true);
 				}
@@ -1013,12 +1047,22 @@ window.__ModuleLoader__.load({
 						if ((failedCount ?? 0) > 0) message += t("batchFailTail", { n: failedCount });
 						toast(message);
 						try { void ctx.get?.("workspaces")?.refresh?.(); } catch { /* ignore */ }
-						scheduleRecencyFix(ctx, targetId);
+						scheduleRecencyFix(ctx, targetId, ids);
 					} catch (err) {
 						toast(t("failed", { msg: err?.message ?? err }), true);
 					}
 				})();
 			});
+
+			// 诊断句柄：控制台用 window.__wsmDebug 检查「最近更新」排序修复通道（排障用）
+			try {
+				window.__wsmDebug = {
+					view: () => { const v = resolveViewStore(ctx); return v ? v.getSnapshot() : null; },
+					resolveViewStore: () => resolveViewStore(ctx),
+					fix: (id, moved) => scheduleRecencyFix(ctx, id, moved),
+					rowId: (el) => rowSessionId(el)
+				};
+			} catch { /* ignore */ }
 
 			registerRescuePanel(ctx, rpcCall);
 		}
