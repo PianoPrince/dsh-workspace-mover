@@ -40,6 +40,15 @@ window.__ModuleLoader__.load({
 				scannedN: "共 {n} 个会话档案",
 				orphanedCaption: "找不到原文件夹的会话",
 				unregCaption: "还没归入分组的会话",
+				misfiledCaption: "挂错分组的会话",
+				misfiledHelp: "这些会话的真实文件夹属于另一个分组，却被记在别的分组名下（常见于克隆式迁移工具或改名后重建分组）。点「归位」只修正归属记录，文件不动。",
+				misfiledLabel: "挂错分组",
+				homeBtn: "归位",
+				homeAllBtn: "全部归位",
+				homeAllDone: "✓ 已归位 {n} 个会话",
+				homedMsg: "✓ 已归位到「{ws}」",
+				mergeDeleteConfirm: "整组 {count} 个会话已迁入「{target}」，源分组「{title}」已空。删除这个空分组吗？",
+				mergeDone: "已删除空分组「{title}」",
 				stalePath: "路径失效",
 				ungroupedBadge: "未归组",
 				unreadable: "无法读取",
@@ -110,6 +119,15 @@ window.__ModuleLoader__.load({
 				scannedN: "{n} session archives",
 				orphanedCaption: "Sessions whose original folder is gone",
 				unregCaption: "Sessions not in any group yet",
+				misfiledCaption: "Sessions filed under the wrong group",
+				misfiledHelp: "These sessions live in a folder that belongs to another group but are recorded elsewhere (common with clone-style movers or groups recreated after a folder rename). \"Home\" only fixes the bookkeeping; files are not touched.",
+				misfiledLabel: "Misfiled",
+				homeBtn: "Home",
+				homeAllBtn: "Home all",
+				homeAllDone: "✓ {n} sessions homed",
+				homedMsg: "✓ Homed to \"{ws}\"",
+				mergeDeleteConfirm: "{count} sessions moved to \"{target}\" and the source group \"{title}\" is now empty. Delete this empty group?",
+				mergeDone: "Deleted empty group \"{title}\"",
 				stalePath: "Stale path",
 				ungroupedBadge: "Ungrouped",
 				unreadable: "Unreadable",
@@ -487,6 +505,47 @@ window.__ModuleLoader__.load({
 				}
 			};
 
+			// 误放归位：只修正记账归属（磁盘文件本就在正确位置），不动文件
+			const homeOne = async (it) => {
+				setBusy(true);
+				setNote("");
+				try {
+					const res = await call("mover.repair", { actions: [{ sessionId: it.sessionId, kind: "home" }] });
+					const r = res.results?.[0];
+					if (!r?.ok) throw new Error(r?.error ?? "home failed");
+					const wsTitle = workspaces.find((w) => w.workspaceId === r.homedTo)?.title ?? r.homedTo ?? "";
+					setNote(t("homedMsg", { ws: wsTitle }));
+					refreshWorkspaces();
+					scheduleRecencyFix(ctx, r.homedTo, [it.sessionId]);
+					await runScan();
+				} catch (err) {
+					setNote(t("failed", { msg: err?.message ?? err }));
+				} finally {
+					setBusy(false);
+				}
+			};
+
+			const homeAll = async (list) => {
+				setBusy(true);
+				setNote("");
+				try {
+					const res = await call("mover.repair", { actions: list.map((it) => ({ sessionId: it.sessionId, kind: "home" })) });
+					const okN = (res.results ?? []).filter((r) => r.ok).length;
+					const failN = (res.results ?? []).length - okN;
+					let msg = t("homeAllDone", { n: okN });
+					if (failN > 0) msg += t("batchFailTail", { n: failN });
+					setNote(msg);
+					refreshWorkspaces();
+					const homes = [...new Set((res.results ?? []).filter((r) => r.ok).map((r) => r.homedTo))];
+					for (const wid of homes) scheduleRecencyFix(ctx, wid, list.map((it) => it.sessionId));
+					await runScan();
+				} catch (err) {
+					setNote(t("failed", { msg: err?.message ?? err }));
+				} finally {
+					setBusy(false);
+				}
+			};
+
 			const undo = async (entry) => {
 				if (!window.confirm(t("undoConfirm"))) return;
 				setBusy(true);
@@ -546,11 +605,13 @@ window.__ModuleLoader__.load({
 			const items = scan?.items ?? [];
 			const orphaned = items.filter((it) => it.status === "orphaned");
 			const unregistered = items.filter((it) => it.status === "unregistered");
+			const misfiled = items.filter((it) => it.status === "misfiled");
 			const brokenWorkspaces = (audit?.items ?? []).filter((it) => it.status !== "ok");
 			const counts = scan?.counts ?? {};
 			const summaryParts = [
 				["orphaned", t("stalePath")],
 				["unregistered", t("ungroupedBadge")],
+				["misfiled", t("misfiledLabel")],
 				["unreadable", t("unreadable")]
 			].filter(([k]) => (counts[k] ?? 0) > 0).map(([k, label]) => `${label} ${counts[k]}`);
 
@@ -605,6 +666,23 @@ window.__ModuleLoader__.load({
 							t("attachBtn")
 						)
 					))
+				) : null,
+				misfiled.length > 0 ? h(Caption, { text: `${t("misfiledCaption")} (${misfiled.length})`, help: t("misfiledHelp") }) : null,
+				misfiled.length > 1 ? h("div", { className: "wsm-scanrow" },
+					h("button", { className: "wsm-btn small primary", disabled: busy, onClick: () => void homeAll(misfiled) }, t("homeAllBtn"))
+				) : null,
+				misfiled.length > 0 ? h("div", { className: "wsm-list" },
+					misfiled.map((it) => {
+						const ownerNames = (it.ownerWorkspaceIds ?? [])
+							.map((wid) => workspaces.find((w) => w.workspaceId === wid)?.title ?? wid.slice(0, 8))
+							.join("/") || "?";
+						return h("div", { className: "wsm-item", key: it.sessionId },
+							h("span", { className: "wsm-mono" }, it.title || t("unnamedSession")),
+							it.archived ? h("span", { className: "wsm-badge" }, "archived") : null,
+							h("span", { className: "wsm-cwd", title: `${it.homePath ?? it.cwd ?? "?"}` }, `${ownerNames} → ${it.homeTitle ?? "?"}`),
+							h("button", { className: "wsm-btn small primary", disabled: busy, onClick: () => void homeOne(it) }, t("homeBtn"))
+						);
+					})
 				) : null,
 				h("div", { className: "wsm-history" },
 					h(Caption, { text: t("historySection"), help: t("historyHelp") }),
@@ -1048,6 +1126,18 @@ window.__ModuleLoader__.load({
 						toast(message);
 						try { void ctx.get?.("workspaces")?.refresh?.(); } catch { /* ignore */ }
 						scheduleRecencyFix(ctx, targetId, ids);
+						// 合并：全部成员迁入且源分组已空时，提供删除空分组（逐级确认，失败不影响迁移结果）
+						try {
+							const fresh = await fetchWorkspaces();
+							const source = fresh.find((w) => w.workspaceId === workspace.workspaceId);
+							const targetTitle = fresh.find((w) => w.workspaceId === targetId)?.title ?? targetId;
+							if (source && (source.sessionIds ?? []).length === 0
+								&& window.confirm(t("mergeDeleteConfirm", { count: okCount, title: workspace.title, target: targetTitle }))) {
+								const del = await ctx.get?.("workspaces")?.delete?.(workspace.workspaceId);
+								if (del?.ok) toast(t("mergeDone", { title: workspace.title }));
+								else toast(t("failed", { msg: del?.error?.message ?? "delete failed" }), true);
+							}
+						} catch { /* 合并删除为可选步骤，失败静默 */ }
 					} catch (err) {
 						toast(t("failed", { msg: err?.message ?? err }), true);
 					}

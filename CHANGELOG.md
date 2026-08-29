@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## [0.7.0] - 2026-08-28
+
+### Added
+
+- Misfiled-session detection and one-click homing: the scan now recognizes sessions whose header cwd matches an existing workspace but whose bookkeeping lives elsewhere (clone-style movers, groups recreated after folder renames, double-accounting). The rescue panel lists each as "current group → correct group" with a "Home" button plus a "Home all" batch; homing detaches every wrong owner and attaches the matching workspace without touching files on disk.
+- Group merge: after a whole-group move via the workspace-header context menu, the plugin checks the source group and offers to delete it once it is empty — a merge in two commands, through the official workspace delete API.
+- `mover.repair` gains the `home` action kind; `mover.scan` items now carry `homeWorkspaceId` / `homeTitle` / `homePath` / `ownerWorkspaceIds` and a `misfiled` status with matching counts.
+- Tests 32 → 35 cases.
+
 ## [0.6.3] - 2026-08-28
 
 ### Fixed

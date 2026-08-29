@@ -46,8 +46,9 @@ function makeEntity(id, path, hostRef) {
   const record = { path, title: id, sessionIds: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   return {
     id,
-    // 官方语义：path 是读取 record 的实时 getter（mutate 换路径后立即生效）
+    // 官方语义：path / title 都是读取 record 的实时 getter（mutate 换路径/标题后立即生效）
     get path() { return record.path; },
+    get title() { return record.title; },
     get record() { return record; },
     get sessionIds() { return [...record.sessionIds].filter((sid) => hostRef.sessionPath(String(sid)) === record.path); },
     attached: [],
@@ -382,6 +383,62 @@ test('mover.repair attach：原地补记账到路径匹配的工作区', async (
   assert.equal(res.value.results[0].ok, true);
   assert.equal(res.value.results[0].attachedTo, 'wid-a');
   assert.ok(entityA.attached.includes('session-unreg'));
+});
+
+// ---- v0.7 误放会话：misfiled 分类 + 一键归位 ----
+
+test('mover.scan 识别误放会话：记账在 A、目录属于 B', async () => {
+  apply(ctx);
+  // 磁盘文件与头部 cwd 都指向 B（文件本就在正确位置），但记账挂在 A 名下
+  const misDir = artifactPath(root, B, 'session-mis');
+  mkdirSync(dirname(misDir), { recursive: true });
+  writeFileSync(misDir, makeArtifact({ type: 'session', id: 'session-mis', cwd: B, title: 'Misfiled talk' }));
+  entityA.record.sessionIds.push('session-mis');
+
+  const res = await call('mover.scan', {});
+  assert.equal(res.ok, true, JSON.stringify(res));
+  const it = res.value.items.find((i) => i.sessionId === 'session-mis');
+  assert.equal(it.status, 'misfiled');
+  assert.equal(it.homeWorkspaceId, 'wid-b');
+  assert.equal(it.homeTitle, 'wid-b');
+  assert.equal(it.homePath, B);
+  assert.deepEqual(it.ownerWorkspaceIds, ['wid-a']);
+  assert.equal(res.value.counts.misfiled, 1);
+});
+
+test('mover.repair home：从错误记账方摘账并补到正确分组（文件不动）', async () => {
+  apply(ctx);
+  const misDir = artifactPath(root, B, 'session-mis');
+  mkdirSync(dirname(misDir), { recursive: true });
+  writeFileSync(misDir, makeArtifact({ type: 'session', id: 'session-mis', cwd: B, title: 'Misfiled talk' }));
+  entityA.record.sessionIds.push('session-mis');
+
+  const res = await call('mover.repair', { actions: [{ sessionId: 'session-mis', kind: 'home' }] });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  const r = res.value.results[0];
+  assert.equal(r.ok, true);
+  assert.equal(r.homedTo, 'wid-b');
+  assert.ok(!entityA.record.sessionIds.includes('session-mis'), '错误记账已摘除');
+  assert.ok(entityB.record.sessionIds.includes('session-mis'), '正确分组已补账');
+  assert.ok(existsSync(misDir), '磁盘文件原样不动');
+  // 归位后再扫描应归类为 ok
+  const scan = await call('mover.scan', {});
+  assert.equal(scan.value.items.find((i) => i.sessionId === 'session-mis').status, 'ok');
+});
+
+test('mover.repair home：双重记账时摘掉所有错误方，只留正确分组', async () => {
+  apply(ctx);
+  const misDir = artifactPath(root, B, 'session-mis');
+  mkdirSync(dirname(misDir), { recursive: true });
+  writeFileSync(misDir, makeArtifact({ type: 'session', id: 'session-mis', cwd: B }));
+  entityA.record.sessionIds.push('session-mis');
+  entityB.record.sessionIds.push('session-mis');
+
+  const res = await call('mover.repair', { actions: [{ sessionId: 'session-mis', kind: 'home' }] });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.results[0].ok, true);
+  assert.ok(!entityA.record.sessionIds.includes('session-mis'), '多余记账已摘除');
+  assert.ok(entityB.record.sessionIds.includes('session-mis'), '正确分组保持记账');
 });
 
 test('mover.repair relink：失联会话换路径真迁移（复用迁移管线）', async () => {
