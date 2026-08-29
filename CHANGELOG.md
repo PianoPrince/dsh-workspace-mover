@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## [0.6.0] - 2026-08-28
+
+### Added
+
+- Bulk move via multi-select drag: Ctrl/Cmd+click toggles sidebar rows, Shift+click extends within a group, Esc clears; dragging any picked row moves the whole set. Selection is built by the plugin (the sidebar has no native multi-select) with a live count badge.
+- Move a whole group: right-click a workspace header to pick a target group and bulk-move its accounted sessions.
+- New RPC endpoint `mover.moveMany`: up to 50 sessions per batch, reusing the single-move pipeline — independent per-session backup/rollback, per-item error isolation, and per-move history entries (batch results stay undoable one by one).
+- Row-to-session resolution aligns each group's DOM rows with `workspace.sessionIds` order and disambiguates via `mover.scan` titles, so officially hidden blank sessions cannot shift the mapping.
+
 ## [0.5.1] - 2026-08-27
 
 ### Fixed

@@ -49,6 +49,7 @@
 DeepSeek Harness 的侧边栏支持工作区内拖拽排序会话，但把会话拖到**另一个工作区**上会被静默忽略——官方 RPC 只暴露了单工作区内的 `insertSessionBefore`，没有跨工作区移动接口。本插件补上这块：
 
 - **🖱️ 拖拽交互**：把任意空闲会话行拖到目标工作区的标题行，确认框亮出目标路径，一键迁移
+- **📦 批量迁移**：Ctrl/Shift+点击多选会话行（插件自建选择集，带计数徽章），拖任一选中行整批迁移；右键工作区标题行可整组搬移。单批至多 50 个，逐条独立备份回滚、失败互不牵连
 - **🚚 真迁移**：物理搬移原始 `session.jsonl.zstd` 档案、改写头部 `cwd`、更新工作区注册表——会话 id 与全部历史**原样保留**，不产生副本、不重新注入上下文、**零 token 消耗**
 - **🏠 工作区搬家向导**：项目文件夹被移动/改名后，一键把失效的工作区**原地重定向**到新位置——工作区 id、标题、排序、归档位全部保持，名下会话连同旧路径的失联散件批量原样迁移；运行中的自动跳过，中断后续跑只补剩余
 - **🛟 孤儿会话救援**（设置页「会话救援」面板）：扫描磁盘上全部会话档案并分类处理——
@@ -152,6 +153,13 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 3. **未记账**行：点「补挂账」原地挂到路径匹配的工作区；
 4. 每次操作前后都有备份与回滚保护，结果即时反馈。
 
+### 批量迁移
+
+1. 侧边栏 **Ctrl/Cmd+点击** 会话行加入多选（再点取消），**Shift+点击** 在组内范围选择，左下角徽章实时显示已选数量，**Esc** 清空；
+2. 按住任一选中行拖到目标工作区标题行，确认框显示本批数量 → 点「全部移动」；
+3. 也可**右键工作区标题行**，选目标分组整组搬移；
+4. 每个会话独立备份回滚，个别失败（如正在运行）不影响其余，结果 toast 汇总成功与跳过数。
+
 ### 工作区搬家向导
 
 1. 文件夹被移动/改名后，面板顶部的**工作区体检**会把对应分组标记为「路径失效」；
@@ -161,7 +169,7 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 
 ## 🔌 与 DSH 的集成方式
 
-- **Host 半**（`lib/index.js`，零 npm 依赖）：经 `cordis.patch.yml` 以标准 `insert` 行挂载；通过 `ctx.connection.rpc.handle('/workspace-mover', …)` 注册逻辑通道，端点 `mover.status / mover.workspaces / mover.move / mover.scan / mover.repair / mover.history / mover.undo / mover.ws.audit / mover.repoint`，失败详情写入宿主日志（`MOVE FAILED`）。
+- **Host 半**（`lib/index.js`，零 npm 依赖）：经 `cordis.patch.yml` 以标准 `insert` 行挂载；通过 `ctx.connection.rpc.handle('/workspace-mover', …)` 注册逻辑通道，端点 `mover.status / mover.workspaces / mover.move / mover.moveMany / mover.scan / mover.repair / mover.history / mover.undo / mover.ws.audit / mover.repoint`，失败详情写入宿主日志（`MOVE FAILED`）。
 - **移动算法**：
   1. 运行状态检查：仅拒绝回合进行中的会话（`agents.get(id)?.status === 'running'`，与宿主 UI"进行中"徽标同款判据）；常驻内存但空闲的会话允许迁移；
   2. 从磁盘读取权威会话头，校验目标 ≠ 源；
@@ -176,6 +184,13 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 - **迁移历史**：保存于 `$DSH_HOME/workspace-mover/history.json`，最多保留最近 100 条；原工作区仍存在时可直接撤回，原工作区已删除时会明确要求重新选择目标分组。
 
 ## 🆕 最近更新
+
+### v0.6.0 · 2026-08-28
+
+- 批量迁移：插件自建侧边栏多选（Ctrl/Shift+点击、Esc 清空、计数徽章），拖任一选中行整批迁移；右键工作区标题行整组搬移
+- 新增 `mover.moveMany` 端点：单批 ≤50 个，复用单条迁移管线——逐会话独立备份回滚、错误隔离、移动历史逐条落账（可逐条撤回）
+- 行→会话解析按组内顺序对齐 `workspace.sessionIds` 并用扫描标题消歧，官方隐藏的空白会话不会造成错位
+- 测试 27 → 30 用例
 
 ### v0.5.1 · 2026-08-27
 
@@ -202,7 +217,7 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 - 移动前强制备份；attach 失败自动回滚（撤销预置记账 → 还原索引 → 还原字节 + 清理目标 + 重新挂回源工作区）；
 - 仅拒绝回合进行中的会话；常驻空闲会话迁移后修复写路径归属，杜绝历史分叉；
 - 注册表/持久化内部访问全部包在 try/catch 中，失败降级为功能可用 + 重启建议提示；
-- 兼容性目标：Node ≥ 22，dsh 0.1.1-rc.2；核心纯函数与端到端沙箱测试见 `npm test`（27 用例，含回滚路径、救援扫描/修复、历史撤回与工作区重定向）。
+- 兼容性目标：Node ≥ 22，dsh 0.1.1-rc.2；核心纯函数与端到端沙箱测试见 `npm test`（30 用例，含回滚路径、救援扫描/修复、历史撤回、工作区重定向与批量迁移）。
 
 ## ⚠️ 已知限制
 

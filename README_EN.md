@@ -40,6 +40,7 @@
 DeepSeek Harness's sidebar supports drag-to-reorder within a workspace, but dropping a session onto **another workspace** is silently ignored—the official RPC only exposes within-workspace `insertSessionBefore` and has no cross-workspace move endpoint. This plugin fills that gap:
 
 - **🖱️ Drag & drop**: Drag any idle session row onto a target workspace title row; a confirmation dialog shows the destination path—one click to move
+- **📦 Bulk move**: Ctrl/Shift+click to multi-select rows (plugin-built selection with a live count badge), then drag any picked row to move the whole set; right-click a workspace header to move an entire group. Up to 50 per batch with independent per-session backup/rollback
 - **🚚 True move**: Physically relocates the original `session.jsonl.zstd` archive, rewrites the header `cwd`, and updates the workspace registry—the session id and full history are **preserved as-is**, with no duplicates, no context re-injection, and **zero token cost**
 - **🏠 Move-home wizard**: After a project folder was moved or renamed on disk, redirect the stale workspace **in place** to its new location with one click—workspace id, title, order and archive flags all preserved; every session under it, including stranded ones on the old path, migrates as-is in one batch. Running sessions skip automatically; an interrupted run resumes with only what remains.
 - **🛟 Orphan session rescue** (Settings → "Session Rescue" panel): Scans all session archives on disk and sorts them into—
@@ -142,6 +143,13 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 3. **Unregistered** rows: click "Attach" to register them with the workspace matching their path;
 4. Every operation is bracketed by backup and rollback protection, with immediate feedback.
 
+### Bulk move
+
+1. **Ctrl/Cmd+click** sidebar rows to toggle selection (**Shift+click** extends within a group); a corner badge tracks the count, **Esc** clears;
+2. Drag any picked row onto the target workspace title row; the confirmation shows the batch size → click "Move all";
+3. Or **right-click a workspace header** and pick a target group to move the whole group;
+4. Every session is backed up and rolled back independently—one failure (e.g. running) never blocks the rest; the toast summarizes moved vs skipped.
+
 ### Move-home wizard
 
 1. Once a folder was moved or renamed, the **Workspace health** block at the top of the panel flags the matching group as missing;
@@ -151,7 +159,7 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 
 ## 🔌 DSH Integration
 
-- **Host half** (`lib/index.js`, zero npm deps): mounted via a standard `insert` row in `cordis.patch.yml`; registers a logical channel through `ctx.connection.rpc.handle('/workspace-mover', …)` with endpoints `mover.status / mover.workspaces / mover.move / mover.scan / mover.repair / mover.history / mover.undo / mover.ws.audit / mover.repoint`; failure details land in the host log (`MOVE FAILED`).
+- **Host half** (`lib/index.js`, zero npm deps): mounted via a standard `insert` row in `cordis.patch.yml`; registers a logical channel through `ctx.connection.rpc.handle('/workspace-mover', …)` with endpoints `mover.status / mover.workspaces / mover.move / mover.moveMany / mover.scan / mover.repair / mover.history / mover.undo / mover.ws.audit / mover.repoint`; failure details land in the host log (`MOVE FAILED`).
 - **Move algorithm**:
   1. Running-state check: only sessions mid-turn are rejected (`agents.get(id)?.status === 'running'`, same predicate as the host UI's badge); sessions resident in memory but idle may be moved;
   2. Reads the authoritative session header from disk and verifies target ≠ source;
@@ -166,6 +174,13 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 - **Move history**: stored at `$DSH_HOME/workspace-mover/history.json`, capped at the last 100 entries; undo goes straight back while the original workspace still exists, otherwise you are asked to choose a new target group explicitly.
 
 ## 🆕 Recent Updates
+
+### v0.6.0 · 2026-08-28
+
+- Bulk move: plugin-built sidebar multi-select (Ctrl/Shift+click, Esc to clear, count badge) — drag any picked row to move the whole set; right-click a workspace header to move an entire group
+- New `mover.moveMany` endpoint: up to 50 per batch, reusing the single-move pipeline — independent per-session backup/rollback, error isolation, and per-move history entries (undoable one by one)
+- Row-to-session resolution aligns each group's rows with `workspace.sessionIds` order, disambiguated by scan titles so hidden blank sessions cannot shift the mapping
+- Tests 27 → 30 cases
 
 ### v0.5.1 · 2026-08-27
 
@@ -192,7 +207,7 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 - Forced backup before every move; automatic rollback if attaching fails (unseed bookkeeping → restore index snapshot → restore bytes + clean target → reattach to the source workspace);
 - Only sessions mid-turn are rejected by default; idle resident sessions get their write-path ownership fixed after moving, preventing history forks;
 - All registry/persistence internals are wrapped in try/catch—on failure the plugin degrades to functional-with-a-restart-hint instead of breaking;
-- Compatibility targets: Node ≥ 22, dsh 0.1.1-rc.2; core pure functions and end-to-end sandbox tests ship via `npm test` (27 cases covering rollback paths, rescue scan/repair, history undo, and workspace repoint).
+- Compatibility targets: Node ≥ 22, dsh 0.1.1-rc.2; core pure functions and end-to-end sandbox tests ship via `npm test` (30 cases covering rollback paths, rescue scan/repair, history undo, and workspace repoint).
 
 ## ⚠️ Known Limitations
 
