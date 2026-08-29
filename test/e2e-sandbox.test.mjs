@@ -577,9 +577,20 @@ test('moveMany：多个会话一次迁移到同一目标，逐条返回结果与
   assert.ok(!existsSync(artifactPath(root, A, 'session-aaa')));
   assert.ok(existsSync(artifactPath(root, B, 'session-bbb')));
   assert.equal(readHeader(readFileSync(artifactPath(root, B, 'session-bbb'))).cwd, B);
-  // 移动历史逐条落账，可整批撤回
+  // 历史聚合成一条批量记录（不再逐条落账），可整批撤回
+  assert.ok(res.value.historyId);
   const history = await call('mover.history');
-  assert.equal(history.value.items.length, 2);
+  assert.equal(history.value.items.length, 1);
+  const batchEntry = history.value.items[0];
+  assert.equal(batchEntry.id, res.value.historyId);
+  assert.equal(batchEntry.batch, true);
+  assert.equal(batchEntry.targetWorkspaceId, 'wid-b');
+  assert.equal(batchEntry.to, B);
+  assert.equal(batchEntry.sessions.length, 2);
+  const bySession = Object.fromEntries(batchEntry.sessions.map((s) => [s.sessionId, s]));
+  assert.equal(bySession['session-aaa'].sourceWorkspaceId, 'wid-a');
+  assert.equal(bySession['session-aaa'].from, A);
+  assert.equal(bySession['session-bbb'].sourceWorkspaceId, 'wid-a');
 });
 
 test('moveMany：坏会话只影响自己，其余照常完成', async () => {
@@ -599,6 +610,72 @@ test('moveMany：坏会话只影响自己，其余照常完成', async () => {
   assert.equal(byId['session-ghost'].ok, false);
   assert.match(byId['session-ghost'].error, /not found/);
   assert.equal(byId['session-aaa'].ok, true);
+  // 有失败项时只把成功的聚合成一条
+  const history = await call('mover.history');
+  assert.equal(history.value.items.length, 1);
+  assert.deepEqual(history.value.items[0].sessions.map((s) => s.sessionId), ['session-aaa']);
+});
+
+test('moveMany 历史聚合成一条：整批一键撤回到各自来源', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  const dir2 = artifactPath(root, A, 'session-bbb');
+  mkdirSync(dirname(dir2), { recursive: true });
+  writeFileSync(dir2, makeArtifact({ type: 'session', id: 'session-bbb', cwd: A, title: 'Beta talk' }));
+
+  const res = await call('mover.moveMany', {
+    sessions: [{ sessionId: 'session-aaa' }, { sessionId: 'session-bbb' }],
+    targetWorkspaceId: 'wid-b'
+  });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.ok(res.value.historyId);
+
+  const undone = await call('mover.undo', { historyId: res.value.historyId });
+  assert.equal(undone.ok, true, JSON.stringify(undone));
+  assert.equal(undone.value.undone, true);
+  assert.equal(undone.value.batch, true);
+  assert.equal(undone.value.undoneCount, 2);
+  assert.equal(undone.value.failedCount, 0);
+  assert.ok(existsSync(artifactPath(root, A, 'session-aaa')), 'session-aaa 回到 A');
+  assert.ok(existsSync(artifactPath(root, A, 'session-bbb')), 'session-bbb 回到 A');
+  assert.ok(!existsSync(artifactPath(root, B, 'session-aaa')));
+  assert.ok(!existsSync(artifactPath(root, B, 'session-bbb')));
+  assert.ok(entityA.sessionIds.includes('session-aaa'));
+  assert.ok(entityA.sessionIds.includes('session-bbb'));
+  const after = await call('mover.history');
+  assert.deepEqual(after.value.items, [], '整批撤回后记录清空');
+});
+
+test('批量撤回部分失败：来源已失效的会话保留在记录中，其余照常撤回', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  const moved = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(moved.ok, true, JSON.stringify(moved));
+
+  // 直接构造一条批量历史：一个来源有效（wid-a），一个来源工作区已不存在（wid-gone）
+  const historyDir = join(root, 'workspace-mover');
+  mkdirSync(historyDir, { recursive: true });
+  writeFileSync(join(historyDir, 'history.json'), JSON.stringify([{
+    id: 'batch-crafted',
+    batch: true,
+    targetWorkspaceId: 'wid-b',
+    to: B,
+    movedAt: new Date().toISOString(),
+    sessions: [
+      { sessionId: 'session-aaa', title: 'Alpha discussion', from: A, sourceWorkspaceId: 'wid-a' },
+      { sessionId: 'session-gone', title: 'Lost', from: A, sourceWorkspaceId: 'wid-gone' }
+    ]
+  }], null, 2));
+
+  const undone = await call('mover.undo', { historyId: 'batch-crafted' });
+  assert.equal(undone.ok, true, JSON.stringify(undone));
+  assert.equal(undone.value.undoneCount, 1);
+  assert.equal(undone.value.failedCount, 1);
+  assert.ok(existsSync(artifactPath(root, A, 'session-aaa')), '有效来源的会话被撤回');
+  // 记录保留失败项，可再次撤回
+  const after = await call('mover.history');
+  assert.equal(after.value.items.length, 1);
+  assert.deepEqual(after.value.items[0].sessions.map((s) => s.sessionId), ['session-gone']);
 });
 
 test('moveMany：空列表 / 超上限 / 缺 target 整批拒绝', async () => {

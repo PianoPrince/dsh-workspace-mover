@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## [0.6.1] - 2026-08-28
+
+### Fixed
+
+- Bulk moves now aggregate into a single "Recent moves" entry (with per-session sources recorded inside), and one Undo sends every session back to its own original group; sessions whose source workspace disappeared stay in the entry for a retry.
+- Picking a session with a plain click now leaves multi-select automatically — no more stale "N sessions picked" badge after navigating away.
+- Esc clears the multi-select even when the chat input has focus.
+- The sidebar's "Recently updated" sort no longer pins freshly moved sessions to the top: the official per-workspace order account treats any unknown session as newly active and remembers the wrong order. After every move (single, batch, whole-group) and every undo, the plugin clears that workspace's account through the official store action, triggering the same full recency re-sort as manually toggling the sort option — silently, and only while "Recently updated" is the active sort (manual custom order is never touched).
+
 ## [0.6.0] - 2026-08-28
 
 ### Added

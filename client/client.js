@@ -75,8 +75,10 @@ window.__ModuleLoader__.load({
 				batchConfirmTitle: "批量移动会话",
 				batchHint: "将把 {count} 个会话真迁移到目标工作区；每个会话独立备份，失败自动回滚且不影响其余。",
 				batchMove: "全部移动",
-				batchDone: "✓ 成功 {n} 个",
-				batchFailTail: "；{n} 个未移动（详见结果）",
+		batchDone: "✓ 成功 {n} 个",
+		batchFailTail: "；{n} 个未移动（详见结果）",
+		batchEntryTitle: "批量移动 {n} 个会话",
+		batchUndoPartial: "；{n} 个未能撤回（可重试）",
 				pickHint: "已选 {n} 个会话 · Ctrl+点击行可多选 · 拖到目标工作区标题行批量移动 · Esc 清空",
 				pickCleared: "已清空多选",
 				pickEscHint: "按 Esc 清空多选（输入框聚焦时无效）",
@@ -143,8 +145,10 @@ window.__ModuleLoader__.load({
 				batchConfirmTitle: "Move sessions in bulk",
 				batchHint: "{count} sessions will be truly moved to the target workspace; each is backed up independently and failures roll back without touching the rest.",
 				batchMove: "Move all",
-				batchDone: "✓ {n} moved",
-				batchFailTail: "; {n} not moved (see results)",
+		batchDone: "✓ {n} moved",
+		batchFailTail: "; {n} not moved (see results)",
+		batchEntryTitle: "{n} sessions (batch move)",
+		batchUndoPartial: "; {n} not undone (retry available)",
 				pickHint: "{n} sessions picked · Ctrl+click rows to multi-select · drag onto a workspace header to move in bulk · Esc to clear",
 				pickCleared: "Selection cleared",
 				pickEscHint: "Press Esc to clear the multi-selection (not while typing in the composer)",
@@ -223,6 +227,35 @@ window.__ModuleLoader__.load({
 		/** 行元素判定：会话行 vs 工作区标题行（基于 ARIA 语义，非哈希类名）。 */
 		const sessionRow = (el) => el?.closest?.('div[role="treeitem"][aria-selected]');
 		const headerRow = (el) => el?.closest?.('div[role="treeitem"][aria-expanded]');
+
+		/**
+		 * 官方侧边栏为每个工作区维护「最近更新」排序账本（sessionOrderByAccount / sessionUpdatedAtByAccount）；
+		 * 新移入的会话必然不在账本里，会被官方"活跃提升"策略错误置顶，且账本记住该顺序。
+		 * 清空该工作区账本即可触发官方的全量按真实 updatedAt 重排（等价于用户手动切一次排序）。
+		 * 通过 React fiber 拿到官方组件的 store action 调用；结构变化时静默跳过（fail-soft）。
+		 */
+		function scheduleRecencyFix(workspaceId) {
+			if (!workspaceId) return;
+			const wipe = () => {
+				try {
+					const anchor = document.querySelector('div[role="treeitem"][aria-expanded]');
+					const fiberKey = anchor && Object.keys(anchor).find((k) => k.startsWith("__reactFiber$"));
+					if (!fiberKey) return;
+					let props = null;
+					for (let fiber = anchor[fiberKey]; fiber; fiber = fiber.return) {
+						const p = fiber.memoizedProps;
+						if (p && typeof p.syncSessionOrderAccount === "function") { props = p; break; }
+					}
+					// 手动排序没有"提升"行为；此时清账本反而会丢用户手动拖拽的自定义顺序
+					if (!props || props.orderBy !== "updated") return;
+					props.syncSessionOrderAccount(workspaceId, [], {});
+				} catch { /* ignore */ }
+			};
+			// 工作区变更帧可能晚于 RPC 返回到达，首次清空会被旧数据重新播种；多清几次覆盖竞态
+			wipe();
+			setTimeout(wipe, 400);
+			setTimeout(wipe, 1200);
+		}
 
 			function injectOverlay() {
 				const overlay = document.createElement("div");
@@ -396,7 +429,15 @@ window.__ModuleLoader__.load({
 				setNote("");
 				try {
 					const result = await call("mover.undo", { historyId: entry.id });
-					setNote(t("undone"));
+					let noteText = t("undone");
+					if ((result?.failedCount ?? 0) > 0) noteText += t("batchUndoPartial", { n: result.failedCount });
+					setNote(noteText);
+					// 撤回同样会把会话变回目标分组的"账本新面孔"，一并修正「最近更新」排序
+					const movedBack = new Set((result?.results ?? []).filter((r) => r.ok).map((r) => String(r.sessionId)));
+					const targets = entry.batch
+						? (entry.sessions ?? []).filter((s) => movedBack.has(String(s.sessionId))).map((s) => s.sourceWorkspaceId)
+						: [result?.to?.workspaceId ?? entry.sourceWorkspaceId];
+					for (const id of new Set(targets.filter(Boolean))) scheduleRecencyFix(id);
 					await runScan();
 				} catch (err) {
 					setNote(t("failed", { msg: err?.message ?? err }));
@@ -491,13 +532,19 @@ window.__ModuleLoader__.load({
 				) : null,
 				h("div", { className: "wsm-history" },
 					h(Caption, { text: t("historySection"), help: t("historyHelp") }),
-					history.length > 0 ? h("div", { className: "wsm-list" }, history.slice(0, 20).map((entry) =>
-						h("div", { className: "wsm-item", key: entry.id },
-							h("span", { className: "wsm-mono" }, entry.title || t("unnamedSession")),
-							h("span", { className: "wsm-cwd", title: `${entry.sessionId}: ${entry.from} → ${entry.to}` }, `${entry.from} → ${entry.to}`),
-							h("button", { className: "wsm-btn small", disabled: busy || !entry.sourceWorkspaceId, title: entry.sourceWorkspaceId ? undefined : t("historyHelp"), onClick: () => void undo(entry) }, t("undoBtn"))
-						)
-					)) : h("div", { className: "wsm-note" }, t("historyEmpty"))
+					history.length > 0 ? h("div", { className: "wsm-list" }, history.slice(0, 20).map((entry) => {
+						const isBatch = Boolean(entry.batch);
+						const undoable = isBatch
+							? (entry.sessions ?? []).some((s) => s.sourceWorkspaceId)
+							: Boolean(entry.sourceWorkspaceId);
+						return h("div", { className: "wsm-item", key: entry.id },
+							h("span", { className: "wsm-mono" },
+								isBatch ? t("batchEntryTitle", { n: entry.sessions?.length ?? 0 }) : (entry.title || t("unnamedSession"))),
+							h("span", { className: "wsm-cwd", title: isBatch ? t("batchEntryTitle", { n: entry.sessions?.length ?? 0 }) : `${entry.sessionId}: ${entry.from} → ${entry.to}` },
+								isBatch ? (entry.to ? `→ ${entry.to}` : "") : `${entry.from} → ${entry.to}`),
+							h("button", { className: "wsm-btn small", disabled: busy || !undoable, title: undoable ? undefined : t("historyHelp"), onClick: () => void undo(entry) }, t("undoBtn"))
+						);
+					})) : h("div", { className: "wsm-note" }, t("historyEmpty"))
 				),
 				scan && orphaned.length === 0 && unregistered.length === 0 && items.length > 0
 					? h("div", { className: "wsm-note" }, t("allClear"))
@@ -666,10 +713,14 @@ window.__ModuleLoader__.load({
 
 			// Ctrl/Cmd+点击：加入/移出；Shift+点击：组内范围选择。普通点击不干预。
 			document.addEventListener("click", async (e) => {
-				const row = sessionRow(e.target);
-				if (!row) return;
-				const meta = e.ctrlKey || e.metaKey;
-				if (!meta && !e.shiftKey) return;
+			const row = sessionRow(e.target);
+			if (!row) return;
+			const meta = e.ctrlKey || e.metaKey;
+			if (!meta && !e.shiftKey) {
+				// 普通点击会话行 = 官方跳转语义；顺带静默退出多选，避免残留"已选 X 个"
+				if (pickedRows.size > 0) clearSelection(true);
+				return;
+			}
 				e.preventDefault();
 				e.stopImmediatePropagation();
 				try {
@@ -703,11 +754,9 @@ window.__ModuleLoader__.load({
 				}
 			}, true);
 
-			// Esc 清空多选（输入框聚焦时不拦截，避免打断输入中的取消行为）
+			// Esc 清空多选；不消费事件，输入框聚焦时也照常清空（官方输入的取消行为不受影响）
 			document.addEventListener("keydown", (e) => {
 				if (e.key !== "Escape" || pickedRows.size === 0) return;
-				const el = document.activeElement;
-				if (el?.tagName === "INPUT" || el?.tagName === "TEXTAREA" || el?.isContentEditable) return;
 				clearSelection();
 			});
 			//#endregion
@@ -822,7 +871,8 @@ window.__ModuleLoader__.load({
 						if (res?.ok) {
 							toast(res.value?.attached ? t("selfHealed") : t("done", { title: workspace.title }));
 							try { void ctx.get?.("workspaces")?.refresh?.(); } catch { /* ignore */ }
-							if (res.value?.restartHint) setTimeout(() => toast(t("restartHint"), true), 1200);
+							scheduleRecencyFix(workspace.workspaceId);
+						if (res.value?.restartHint) setTimeout(() => toast(t("restartHint"), true), 1200);
 						} else {
 							const msg = res?.error?.message ?? "unknown";
 							const text = (/roll/i.test(msg) ? t("rolledBack", { msg }) : t("failed", { msg }));
@@ -850,6 +900,7 @@ window.__ModuleLoader__.load({
 					toast(message);
 					clearSelection(true);
 					try { void ctx.get?.("workspaces")?.refresh?.(); } catch { /* ignore */ }
+					scheduleRecencyFix(workspace.workspaceId);
 				} catch (err) {
 					toast(t("failed", { msg: err?.message ?? err }), true);
 				}
@@ -886,6 +937,7 @@ window.__ModuleLoader__.load({
 						if ((failedCount ?? 0) > 0) message += t("batchFailTail", { n: failedCount });
 						toast(message);
 						try { void ctx.get?.("workspaces")?.refresh?.(); } catch { /* ignore */ }
+						scheduleRecencyFix(targetId);
 					} catch (err) {
 						toast(t("failed", { msg: err?.message ?? err }), true);
 					}

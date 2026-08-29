@@ -175,10 +175,16 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 
 ## 🆕 Recent Updates
 
+### v0.6.1 · 2026-08-28
+
+- Bulk moves now aggregate into a single "Recent moves" entry (with each session's source group recorded inside) and undo in one click; sessions whose source group was deleted stay in the entry for a retry.
+- A plain click on a session row now leaves multi-select automatically — no more stale "N sessions picked" badge; Esc clears the selection even when the chat input has focus.
+- Fixed the sidebar's "Recently updated" sort pinning freshly moved sessions to the top: the official per-workspace order account treats any unknown session as newly active and remembers the wrong order. After every move/undo the plugin now clears that workspace's account through the official store action, triggering the same full recency re-sort as manually toggling the sort option — silently, and only in "Recently updated" mode (manual custom order is never touched).
+
 ### v0.6.0 · 2026-08-28
 
 - Bulk move: plugin-built sidebar multi-select (Ctrl/Shift+click, Esc to clear, count badge) — drag any picked row to move the whole set; right-click a workspace header to move an entire group
-- New `mover.moveMany` endpoint: up to 50 per batch, reusing the single-move pipeline — independent per-session backup/rollback, error isolation, and per-move history entries (undoable one by one)
+- New `mover.moveMany` endpoint: up to 50 per batch, reusing the single-move pipeline — independent per-session backup/rollback, error isolation, and move history entries (undoable)
 - Row-to-session resolution aligns each group's rows with `workspace.sessionIds` order, disambiguated by scan titles so hidden blank sessions cannot shift the mapping
 - Tests 27 → 30 cases
 
