@@ -1,0 +1,23 @@
+# 每日更新 README 上的克隆数徽章：traffic API → Gist 徽章 JSON（仓库分支零提交）。
+# 前置：仓库 Secrets 里配置 TRAFFIC_TOKEN（classic PAT，勾 repo + gist 权限）。
+name: Traffic badge
+
+on:
+  schedule:
+    - cron: "20 18 * * *" # 18:20 UTC ≈ 北京时间 02:20，GitHub 在此刻刷新前一日流量
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node .github/scripts/traffic-badge.mjs
+        env:
+          TRAFFIC_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
