@@ -60,9 +60,10 @@ const cumulative = rows.reduce((sum, row) => sum + row.count, 0);
 
 const badge = (label, message) => JSON.stringify({ schemaVersion: 1, label, message, color: 'blue' }, null, 0);
 const files = {
-	'wsm-clones-14d.json': { content: badge('clones (14d)', `${clones.body.count} · ${clones.body.uniques} uniques`) },
-	'wsm-traffic-history.jsonl': { content: rows.length ? rows.map((r) => JSON.stringify(r)).join('\n') + '\n' : '' }
+	'wsm-clones-14d.json': { content: badge('clones (14d)', `${clones.body.count} · ${clones.body.uniques} uniques`) }
 };
+// 空 content 会被 GitHub 当作删除操作而 422：历史文件只在有内容时提交
+if (rows.length > 0) files['wsm-traffic-history.jsonl'] = { content: rows.map((r) => JSON.stringify(r)).join('\n') + '\n' };
 if (cumulative > 0) files['wsm-clones-total.json'] = { content: badge('git clones', `${cumulative} total`) };
 
 const patched = await api(`/gists/${GIST_ID}`, { method: 'PATCH', body: JSON.stringify({ files }) });
