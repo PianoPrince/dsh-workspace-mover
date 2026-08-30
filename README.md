@@ -130,6 +130,8 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 |---|
 | **Ctrl+点击选中多个会话（当前打开的会话自动带上），左下角亮出计数徽章；拖到目标工作区标题行即整批移动，Esc 清空** |
 | ![批量移动选中时：三个会话高亮，左下角显示已选计数徽章](docs/media/batch_move_selection.png) |
+| **组标题「⋯」菜单里的「整组迁移…」：整组搬移，迁入后可删除已空的源分组（分组合并）** |
+| ![组标题菜单中的整组迁移入口](docs/media/workspace_move.png) |
 
 ### 工作区搬家向导 · 实测全程
 

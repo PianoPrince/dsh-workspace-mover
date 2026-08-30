@@ -120,6 +120,8 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 |---|
 | **Ctrl+click to pick sessions (the currently open one is included automatically); a count badge appears bottom-left. Drag onto a target workspace title row to move them all; Esc clears** |
 | ![Bulk move selection: three sessions highlighted, count badge bottom-left](docs/media/batch_move_selection.png) |
+| **"Move whole group…" in a header's "…" menu: move the set, then delete the emptied source group (a merge)** |
+| ![Move whole group entry in the workspace header menu](docs/media/workspace_move.png) |
 
 ### Move-home wizard · full field run
 
