@@ -156,7 +156,10 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 2. **Orphaned** rows: pick a target workspace → click "Move here" (true move, id preserved);
 3. **Unregistered** rows: click "Attach" to register them with the workspace matching their path;
 4. **Misfiled** rows: shown as "current group → correct group"; click "Home" or "Home all" to fix the bookkeeping instantly (files untouched);
-5. Every operation is bracketed by backup and rollback protection, with immediate feedback.
+5. **Fix all**: runs every auto-fixable item in one pass (misfiled homing, unregistered attach — each isolated on failure); orphans and damaged archives are skipped with a stated reason;
+6. **Filter box**: instantly narrow every list by title / session id / path / group;
+7. **Archived / Recycle bin / Backups**: restore archived sessions in one click; deleted sessions land in the recycle bin — restore to the original spot or any group, purge after confirmation; the byte-level backups created by every move are grouped per session, restorable or cleanable;
+8. Every operation is bracketed by backup and rollback protection, reported as fixed / skipped / failed.
 
 ### Bulk move
 
@@ -174,7 +177,7 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 
 ## 🔌 DSH Integration
 
-- **Host half** (`lib/index.js`, zero npm deps): mounted via a standard `insert` row in `cordis.patch.yml`; registers a logical channel through `ctx.connection.rpc.handle('/workspace-mover', …)` with endpoints `mover.status / mover.workspaces / mover.move / mover.moveMany / mover.scan / mover.repair / mover.history / mover.undo / mover.ws.audit / mover.repoint / mover.archived / mover.unarchive / mover.openFolder`; failure details land in the host log (`MOVE FAILED`).
+- **Host half** (`lib/index.js`, zero npm deps): mounted via a standard `insert` row in `cordis.patch.yml`; registers a logical channel through `ctx.connection.rpc.handle('/workspace-mover', …)` with endpoints `mover.status / mover.workspaces / mover.move / mover.moveMany / mover.scan / mover.repair / mover.repairAll / mover.history / mover.undo / mover.ws.audit / mover.repoint / mover.archived / mover.unarchive / mover.openFolder / mover.session.delete / mover.trash.list / mover.trash.restore / mover.trash.purge / mover.backups.list / mover.backups.restore / mover.backups.deleteOne`; failure details land in the host log (`MOVE FAILED`).
 - **Move algorithm**:
   1. Running-state check: only sessions mid-turn are rejected (`agents.get(id)?.status === 'running'`, same predicate as the host UI's badge); sessions resident in memory but idle may be moved;
   2. Reads the authoritative session header from disk and verifies target ≠ source;
@@ -281,17 +284,21 @@ Compatibility when installed alongside other plugin categories:
 
 ## 🔐 Security
 
-- Forced backup before every move; automatic rollback if attaching fails (unseed bookkeeping → restore index snapshot → restore bytes + clean target → reattach to the source workspace);
+- Forced backup before every move; post-move read-back verification (id + cwd must match, otherwise the whole move rolls back); automatic rollback if attaching fails (unseed bookkeeping → restore index snapshot → restore bytes + clean target → reattach to the source workspace);
+- Deletion goes to the recycle bin: the physical move happens first, so a failed delete changes nothing; the manifest records everything needed to restore; purging requires an explicit confirmation;
+- Sessions still resident in harness memory refuse deletion (their live objects would zombie-recreate files) and get an actionable toast instead;
 - Only sessions mid-turn are rejected by default; idle resident sessions get their write-path ownership fixed after moving, preventing history forks;
 - All registry/persistence internals are wrapped in try/catch—on failure the plugin degrades to functional-with-a-restart-hint instead of breaking;
-- Compatibility targets: Node ≥ 22, dsh 0.1.1-rc.2; core pure functions and end-to-end sandbox tests ship via `npm test` (30 cases covering rollback paths, rescue scan/repair, history undo, and workspace repoint).
+- Compatibility targets: Node ≥ 22, dsh 0.1.1-rc.2; core pure functions and end-to-end sandbox tests ship via `npm test` (64 cases covering rollback paths, rescue scan/repair, history undo, workspace repoint, post-move verification, recycle bin, and backup restore).
 
 ## ⚠️ Known Limitations
 
 - Moving sessions into the "Ungrouped" bucket is not supported;
-- The target-row ↔ workspace mapping relies on render order aligned with `workspace.list`; if a third-party plugin reorders the sidebar structure, refresh before dragging;
+- Sessions still resident in harness memory (opened recently) cannot be deleted directly — their live objects would re-create the files; restart the harness to release them first (a toast explains this when it happens);
+- Row → session identification reads the id carried by the row element itself (React props), with render-order alignment only as a fallback; if a third-party plugin replaces the sidebar DOM so the ARIA selectors no longer match, the affected features silently stop (no data is ever damaged);
 - Flat list view has no workspace title rows, so the plugin stays inactive there;
-- If a host upgrade changes registry cache field names or entity shapes, affected steps degrade gracefully (the feature still works; ownership refresh may need a restart).
+- If a host upgrade changes registry cache field names or entity shapes, affected steps degrade gracefully (the feature still works; ownership refresh may need a restart); unarchive requires the registry's durable state channel and reports clearly when it is unavailable;
+- The workspace re-point wizard relies on the entity's unified `mutate` channel; if a host change makes it unavailable, the wizard aborts before touching the first file with a clear message.
 
 ## License
 

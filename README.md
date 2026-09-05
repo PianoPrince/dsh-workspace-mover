@@ -167,7 +167,10 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 2. **失联**行：选目标工作区 → 点「迁移过去」（真迁移，ID 保留）；
 3. **未记账**行：点「补挂账」原地挂到路径匹配的工作区；
 4. **挂错分组**行：显示「当前分组 → 应属分组」，点「归位」或「全部归位」即时修正归属（文件不动）；
-5. 每次操作前后都有备份与回滚保护，结果即时反馈。
+5. **一键修复**：自动跑完可修复项（挂错归位、未记账补账，逐项隔离失败），孤儿/损坏项跳过并说明原因；
+6. **筛选框**：按标题 / 会话 ID / 路径 / 分组即时过滤所有列表；
+7. **已归档 / 回收站 / 备份**：归档会话一键恢复；删除的会话进回收站，可还原到原位置或任意分组、确认后彻底删除；迁移自动生成的字节级备份按会话聚合，可恢复或清理；
+8. 每次操作前后都有备份与回滚保护，结果按 已修复/跳过/失败 即时反馈。
 
 ### 批量迁移
 
@@ -185,7 +188,7 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 
 ## 🔌 与 DSH 的集成方式
 
-- **Host 半**（`lib/index.js`，零 npm 依赖）：经 `cordis.patch.yml` 以标准 `insert` 行挂载；通过 `ctx.connection.rpc.handle('/workspace-mover', …)` 注册逻辑通道，端点 `mover.status / mover.workspaces / mover.move / mover.moveMany / mover.scan / mover.repair / mover.history / mover.undo / mover.ws.audit / mover.repoint / mover.archived / mover.unarchive / mover.openFolder`，失败详情写入宿主日志（`MOVE FAILED`）。
+- **Host 半**（`lib/index.js`，零 npm 依赖）：经 `cordis.patch.yml` 以标准 `insert` 行挂载；通过 `ctx.connection.rpc.handle('/workspace-mover', …)` 注册逻辑通道，端点 `mover.status / mover.workspaces / mover.move / mover.moveMany / mover.scan / mover.repair / mover.repairAll / mover.history / mover.undo / mover.ws.audit / mover.repoint / mover.archived / mover.unarchive / mover.openFolder / mover.session.delete / mover.trash.list / mover.trash.restore / mover.trash.purge / mover.backups.list / mover.backups.restore / mover.backups.deleteOne`，失败详情写入宿主日志（`MOVE FAILED`）。
 - **移动算法**：
   1. 运行状态检查：仅拒绝回合进行中的会话（`agents.get(id)?.status === 'running'`，与宿主 UI"进行中"徽标同款判据）；常驻内存但空闲的会话允许迁移；
   2. 从磁盘读取权威会话头，校验目标 ≠ 源；
@@ -292,17 +295,20 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 
 ## 🔐 安全设计
 
-- 移动前强制备份；attach 失败自动回滚（撤销预置记账 → 还原索引 → 还原字节 + 清理目标 + 重新挂回源工作区）；
+- 移动前强制备份；落地回读校验（id/cwd 双确认，不符整体回退）；attach 失败自动回滚（撤销预置记账 → 还原索引 → 还原字节 + 清理目标 + 重新挂回源工作区）；
+- 删除进回收站：物理移动先行，失败零副作用；manifest 完整记录还原所需信息；彻底删除需二次确认；
+- 驻留内存的会话拒绝删除（防止文件被驻留对象重建为僵尸），并给出重启释放的明确指引；
 - 仅拒绝回合进行中的会话；常驻空闲会话迁移后修复写路径归属，杜绝历史分叉；
 - 注册表/持久化内部访问全部包在 try/catch 中，失败降级为功能可用 + 重启建议提示；
-- 兼容性目标：Node ≥ 22，dsh 0.1.1-rc.2；核心纯函数与端到端沙箱测试见 `npm test`（30 用例，含回滚路径、救援扫描/修复、历史撤回、工作区重定向与批量迁移）。
+- 兼容性目标：Node ≥ 22，dsh 0.1.1-rc.2；核心纯函数与端到端沙箱测试见 `npm test`（64 用例，含回滚路径、救援扫描/修复、历史撤回、工作区重定向、批量迁移、迁移后校验、回收站与备份恢复）。
 
 ## ⚠️ 已知限制
 
 - 不支持把会话移入「Ungrouped」桶；
-- 目标行 ↔ 工作区的映射基于渲染顺序与 `workspace.list` 对齐，若第三方插件重排侧边栏结构需先刷新再拖；
+- 常驻内存的会话（近期打开过）不能直接删除——文件会被驻留对象重建；重启 Harness 释放后再删，删除时会给出 toast 提示；
+- 行 → 会话识别优先读取行元素自带的会话标识（React props），渲染顺序对齐仅作兜底；若第三方插件替换侧边栏 DOM 导致 ARIA 选择器失效，相关功能静默停用（不损坏数据）；
 - 「扁平列表」视图无工作区标题行，本插件在该视图不激活；
-- 若宿主升级改变了注册表缓存字段名或实体结构，相关步骤走降级路径（功能可用，归属刷新可能需重启）；
+- 若宿主升级改变了注册表缓存字段名或实体结构，相关步骤走降级路径（功能可用，归属刷新可能需重启）；取消归档依赖 registry 持久写通道，不可用时明确报错而非静默失败；
 - 工作区搬家依赖实体的统一写入通道 `mutate`；若宿主结构变化使其不可用，向导会在改动第一个文件之前中止并明确提示。
 
 ## License
