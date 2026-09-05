@@ -127,6 +127,7 @@ window.__ModuleLoader__.load({
 				backupDeleteBtn: "删除备份",
 				backupDeleteConfirm: "删除「{title}」的 {n} 份备份？删除后无法再从备份恢复。",
 				backupDeletedMsg: "✓ 已删除 {n} 份备份",
+				residentRefuse: "该会话仍驻留在 Harness 内存中（最近被打开过，文件删了会被它重建）。请重启 Harness 释放常驻会话后再删除。",
 				repairAllBtn: "一键修复",
 				repairAllDone: "✓ 已修复 {n} · 跳过 {s} · 失败 {f}",
 				skipNeedsTarget: "需选择目标分组",
@@ -243,6 +244,7 @@ window.__ModuleLoader__.load({
 				backupDeleteBtn: "Delete backups",
 				backupDeleteConfirm: "Delete the {n} backup copies of \"{title}\"? They cannot be restored from afterwards.",
 				backupDeletedMsg: "✓ Deleted {n} backup copy(ies)",
+				residentRefuse: "This session is still resident in harness memory (opened recently) and would re-create its files. Restart the harness to release it, then delete again.",
 				repairAllBtn: "Fix all",
 				repairAllDone: "✓ Fixed {n} · skipped {s} · failed {f}",
 				skipNeedsTarget: "needs a target group",
@@ -588,7 +590,7 @@ window.__ModuleLoader__.load({
 					setTrash(tr);
 					setBackups(bp);
 				} catch (err) {
-					setNote(t("failed", { msg: err?.message ?? err }));
+					failNote(err);
 				} finally {
 					setBusy(false);
 				}
@@ -610,7 +612,7 @@ window.__ModuleLoader__.load({
 					scheduleRecencyFix(ctx, target, [item.sessionId]);
 					await runScan();
 				} catch (err) {
-					setNote(t("failed", { msg: err?.message ?? err }));
+					failNote(err);
 				} finally {
 					setBusy(false);
 				}
@@ -629,7 +631,7 @@ window.__ModuleLoader__.load({
 					scheduleRecencyFix(ctx, r.attachedTo, [item.sessionId]);
 					await runScan();
 				} catch (err) {
-					setNote(t("failed", { msg: err?.message ?? err }));
+					failNote(err);
 				} finally {
 					setBusy(false);
 				}
@@ -649,7 +651,7 @@ window.__ModuleLoader__.load({
 					scheduleRecencyFix(ctx, r.homedTo, [it.sessionId]);
 					await runScan();
 				} catch (err) {
-					setNote(t("failed", { msg: err?.message ?? err }));
+					failNote(err);
 				} finally {
 					setBusy(false);
 				}
@@ -670,7 +672,7 @@ window.__ModuleLoader__.load({
 					for (const wid of homes) scheduleRecencyFix(ctx, wid, list.map((it) => it.sessionId));
 					await runScan();
 				} catch (err) {
-					setNote(t("failed", { msg: err?.message ?? err }));
+					failNote(err);
 				} finally {
 					setBusy(false);
 				}
@@ -705,7 +707,7 @@ window.__ModuleLoader__.load({
 					refreshWorkspaces();
 					await runScan();
 				} catch (err) {
-					setNote(t("failed", { msg: err?.message ?? err }));
+					failNote(err);
 				} finally {
 					setBusy(false);
 				}
@@ -726,7 +728,7 @@ window.__ModuleLoader__.load({
 					setNote(message);
 					await runScan();
 				} catch (err) {
-					setNote(t("failed", { msg: err?.message ?? err }));
+					failNote(err);
 				} finally {
 					setBusy(false);
 				}
@@ -746,7 +748,7 @@ window.__ModuleLoader__.load({
 					refreshWorkspaces();
 					await runScan();
 				} catch (err) {
-					setNote(t("failed", { msg: err?.message ?? err }));
+					failNote(err);
 				} finally {
 					setBusy(false);
 				}
@@ -776,7 +778,7 @@ window.__ModuleLoader__.load({
 					refreshWorkspaces();
 					await runScan();
 				} catch (err) {
-					setNote(t("failed", { msg: err?.message ?? err }));
+					failNote(err);
 				} finally {
 					setBusy(false);
 				}
@@ -801,10 +803,18 @@ window.__ModuleLoader__.load({
 					refreshWorkspaces();
 					await runScan();
 				} catch (err) {
-					setNote(t("failed", { msg: err?.message ?? err }));
+					failNote(err);
 				} finally {
 					setBusy(false);
 				}
+			};
+
+			// 失败双通道：面板底部 note + toast 浮层（note 在长列表里容易被错过）
+			const failNote = (err) => {
+				const raw = String(err?.message ?? err);
+				const msg = /resident in memory/.test(raw) ? t("residentRefuse") : t("failed", { msg: raw });
+				setNote(msg);
+				toast(msg, true);
 			};
 
 			// 删除会话 → 回收站（四件套清理，manifest 可还原）
@@ -818,7 +828,7 @@ window.__ModuleLoader__.load({
 					refreshWorkspaces();
 					await runScan();
 				} catch (err) {
-					setNote(t("failed", { msg: err?.message ?? err }));
+					failNote(err);
 				} finally {
 					setBusy(false);
 				}
@@ -853,7 +863,7 @@ window.__ModuleLoader__.load({
 						refreshWorkspaces();
 						await runScan();
 					} catch (err2) {
-						setNote(t("failed", { msg: err2?.message ?? err2 }));
+						failNote(err2);
 					} finally {
 						setBusy(false);
 					}
@@ -873,7 +883,7 @@ window.__ModuleLoader__.load({
 					refreshWorkspaces();
 					await runScan();
 				} catch (err) {
-					setNote(t("failed", { msg: err?.message ?? err }));
+					failNote(err);
 				} finally {
 					setBusy(false);
 				}
@@ -888,7 +898,7 @@ window.__ModuleLoader__.load({
 					setNote(t("purgedMsg", { n: res?.purged ?? 1 }));
 					await runScan();
 				} catch (err) {
-					setNote(t("failed", { msg: err?.message ?? err }));
+					failNote(err);
 				} finally {
 					setBusy(false);
 				}
@@ -903,7 +913,7 @@ window.__ModuleLoader__.load({
 					setNote(t("purgedMsg", { n: res?.purged ?? list.length }));
 					await runScan();
 				} catch (err) {
-					setNote(t("failed", { msg: err?.message ?? err }));
+					failNote(err);
 				} finally {
 					setBusy(false);
 				}
@@ -937,7 +947,7 @@ window.__ModuleLoader__.load({
 					try {
 						finish(await call("mover.backups.restore", { sessionId: item.sessionId, targetWorkspaceId: targetId }));
 					} catch (err2) {
-						setNote(t("failed", { msg: err2?.message ?? err2 }));
+						failNote(err2);
 					} finally {
 						setBusy(false);
 					}
@@ -955,7 +965,7 @@ window.__ModuleLoader__.load({
 					setNote(t("backupDeletedMsg", { n: res?.deleted ?? 0 }));
 					await runScan();
 				} catch (err) {
-					setNote(t("failed", { msg: err?.message ?? err }));
+					failNote(err);
 				} finally {
 					setBusy(false);
 				}
@@ -977,7 +987,7 @@ window.__ModuleLoader__.load({
 					refreshWorkspaces();
 					await runScan();
 				} catch (err) {
-					setNote(t("failed", { msg: err?.message ?? err }));
+					failNote(err);
 				} finally {
 					setBusy(false);
 				}
