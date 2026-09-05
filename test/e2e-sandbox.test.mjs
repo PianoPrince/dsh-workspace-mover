@@ -953,13 +953,24 @@ test('mover.openFolder 只允许已注册工作区路径；openInFileManager 按
   assert.equal(missing.ok, false);
   assert.match(missing.error.message, /does not exist/);
 
-  // 平台命令拼装（spawn 注入 fake，不真开窗口）
+  // 平台命令拼装（spawn 注入 fake，不真开窗口）：Windows 走 Shell COM 置前，其余平台原生命令
   const calls = [];
   const fakeChild = { unref() {} };
   const cmd = openInFileManager(A, (command, args, opts) => { calls.push([command, args, opts]); return fakeChild; });
-  const expected = process.platform === 'win32' ? 'explorer.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open';
-  assert.equal(cmd, expected);
-  assert.deepEqual(calls[0][0], expected);
-  assert.deepEqual(calls[0][1], [A]);
-  assert.deepEqual(calls[0][2], { detached: true, stdio: 'ignore' });
+  if (process.platform === 'win32') {
+    assert.equal(cmd, 'powershell.exe');
+    assert.deepEqual(calls[0][0], 'powershell.exe');
+    assert.deepEqual(calls[0][1], ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', `(New-Object -ComObject Shell.Application).Open('${A}')`]);
+    assert.deepEqual(calls[0][2], { detached: true, stdio: 'ignore' });
+    // 路径里的单引号必须翻倍转义（PowerShell 单引号字符串规则）
+    const calls2 = [];
+    openInFileManager("E:\\od'd IR", (command, args) => { calls2.push(args); return fakeChild; });
+    assert.match(calls2[0][4], /Open\('E:\\od''d IR'\)/);
+  } else {
+    const expected = process.platform === 'darwin' ? 'open' : 'xdg-open';
+    assert.equal(cmd, expected);
+    assert.deepEqual(calls[0][0], expected);
+    assert.deepEqual(calls[0][1], [A]);
+    assert.deepEqual(calls[0][2], { detached: true, stdio: 'ignore' });
+  }
 });
