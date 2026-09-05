@@ -1083,17 +1083,28 @@ test('stashBackup：相邻前缀 id 的备份互不误删（前缀收紧）', ()
 
 //#region v0.9：回收站 + 备份管理
 
-/** 投影缓存 mock：插件在服务缺省时降级为 no-op，需要验证标题行为时挂上。 */
+/** 投影缓存 mock：插件在服务缺省时降级为 no-op，需要验证标题行为时挂上。
+ *  镜像真实底层 KvTable 契约：put(key, value) 两参、value 为完整 {identity, rows}，
+ *  并做最小 shape 校验——防止把服务层三参签名误用到底层表（域重开时才会爆的真实事故）。 */
 function stubProjection(record) {
+  const assertRecordShape = (value) => {
+    if (!value || typeof value !== 'object') throw new Error('record not-object');
+    if (!value.identity || typeof value.identity.createdAt !== 'number') throw new Error('record.identity invalid');
+    if (!value.rows || typeof value.rows !== 'object') throw new Error('record.rows must be a record (got undefined)');
+    for (const [rk, rv] of Object.entries(value.rows)) {
+      if (typeof rv.ver !== 'number' || typeof rv.seq !== 'number' || !('val' in rv)) throw new Error(`row '${rk}' invalid`);
+    }
+  };
   const table = {
     records: new Map(record ? [['session-aaa', record]] : []),
     get(key) { return this.records.get(String(key)) ?? null; },
-    async put(key, identity, rows) { this.records.set(String(key), { identity, rows }); },
+    async put(key, value) { assertRecordShape(value); this.records.set(String(key), value); },
     async delete(key) { return this.records.delete(String(key)); },
     async update(key, fn) {
       const rec = this.records.get(String(key));
       if (!rec) throw new Error(`missing-key ${key}`);
       const next = fn(rec);
+      assertRecordShape(next);
       this.records.set(String(key), next);
       return next;
     }
