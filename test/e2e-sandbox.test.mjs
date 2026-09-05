@@ -1418,3 +1418,33 @@ test('mover.repairAll：一切正常时返回全零结果', async () => {
   assert.equal(res.value.skippedCount, 0);
   assert.equal(res.value.failedCount, 0);
 });
+
+//#region v1.1.0：迁移预检补全
+
+test('双记账会话迁移：多余归属一并摘除，结果携带 warnings', async () => {
+  apply(ctx);
+  sharedIndex.sessionPaths.set('session-aaa', A);
+  entityA.record.sessionIds.push('session-aaa');
+  entityB.record.sessionIds.push('session-aaa'); // 双记账：B 也记着它（档案实际在 A）
+  const res = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.ok(res.value.warnings.includes('double-accounted'), 'warnings 标记双记账');
+  assert.deepEqual(entityA.record.sessionIds, [], '多余归属已摘除');
+  assert.deepEqual(entityB.record.sessionIds, ['session-aaa']);
+  assert.equal(readHeader(readFileSync(artifactPath(root, B, 'session-aaa'))).cwd, B);
+});
+
+test('目标不可写时拒绝迁移，且不改动任何记账（预检先行）', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  // 在目标会话目录的位置放同名文件，使该目录无法创建（projectKey 目录已被夹具占用，不能在那一层挡）
+  const sessionDirPath = dirname(artifactPath(root, B, 'session-aaa'));
+  mkdirSync(dirname(sessionDirPath), { recursive: true });
+  writeFileSync(sessionDirPath, Buffer.from('blocker'));
+  const res = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(res.ok, false);
+  assert.match(res.error.message, /not writable/);
+  // 预检先行：记账与档案完全未动
+  assert.deepEqual(entityA.record.sessionIds, ['session-aaa']);
+  assert.equal(readHeader(readFileSync(artifactPath(root, A, 'session-aaa'))).cwd, A);
+});
