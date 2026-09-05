@@ -810,10 +810,18 @@ window.__ModuleLoader__.load({
 							h("span", { className: "wsm-mono" }, it.title || t("unnamedSession")),
 						it.archived ? h("span", { className: "wsm-badge" }, "archived") : null,
 						h("span", { className: "wsm-cwd" }, it.cwd ?? "?"),
-						h("button",
-							{ className: "wsm-btn small", disabled: busy || !it.targetWorkspaceId, title: it.targetWorkspaceId ? undefined : t("allWorkspaces"), onClick: () => void attach(it) },
-							t("attachBtn")
-						)
+						it.targetWorkspaceId
+							// 有路径匹配的分组：一键原地补账
+							? h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void attach(it) }, t("attachBtn"))
+							// 分组本身已被删除（或从未注册）：和失联会话一样真迁移到任意分组
+							: h(React.Fragment, null,
+								h("select",
+									{ className: "wsm-select", value: picked[it.sessionId] ?? "", onChange: (e) => setPicked((p) => ({ ...p, [it.sessionId]: e.target.value })) },
+									h("option", { value: "" }, t("allWorkspaces")),
+									workspaces.map((w) => h("option", { key: w.workspaceId, value: w.workspaceId }, `${w.title}（${w.path}）`))
+								),
+								h("button", { className: "wsm-btn small primary", disabled: busy || !picked[it.sessionId], onClick: () => void relink(it) }, t("relinkBtn"))
+							)
 					))
 				) : null,
 				misfiled.length > 0 ? h(Caption, { text: `${t("misfiledCaption")} (${misfiled.length})`, help: t("misfiledHelp") }) : null,

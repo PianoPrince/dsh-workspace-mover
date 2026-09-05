@@ -953,19 +953,21 @@ test('mover.openFolder 只允许已注册工作区路径；openInFileManager 按
   assert.equal(missing.ok, false);
   assert.match(missing.error.message, /does not exist/);
 
-  // 平台命令拼装（spawn 注入 fake，不真开窗口）：Windows 走 Shell COM 置前，其余平台原生命令
+  // 平台命令拼装（spawn 注入 fake，不真开窗口）：Windows = explorer 开窗 + 延时 AppActivate 置前
   const calls = [];
   const fakeChild = { unref() {} };
   const cmd = openInFileManager(A, (command, args, opts) => { calls.push([command, args, opts]); return fakeChild; });
   if (process.platform === 'win32') {
-    assert.equal(cmd, 'powershell.exe');
-    assert.deepEqual(calls[0][0], 'powershell.exe');
-    assert.deepEqual(calls[0][1], ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', `(New-Object -ComObject Shell.Application).Open('${A}')`]);
+    assert.equal(cmd, 'explorer.exe');
+    assert.deepEqual(calls[0][0], String.raw`C:\Windows\explorer.exe`);
+    assert.deepEqual(calls[0][1], [A]);
     assert.deepEqual(calls[0][2], { detached: true, stdio: 'ignore' });
-    // 路径里的单引号必须翻倍转义（PowerShell 单引号字符串规则）
-    const calls2 = [];
-    openInFileManager("E:\\od'd IR", (command, args) => { calls2.push(args); return fakeChild; });
-    assert.match(calls2[0][4], /Open\('E:\\od''d IR'\)/);
+    // 约 0.8s 后用 WScript AppActivate 按标题（目录名）拉前台；单引号翻倍转义
+    await new Promise((r) => setTimeout(r, 950));
+    assert.equal(calls.length, 2, 'expected the delayed activate spawn');
+    assert.equal(calls[1][0], 'powershell.exe');
+    assert.match(calls[1][1][2], /AppActivate\('proj-alpha'\)/);
+    assert.equal(openInFileManager("E:\\od'd IR", () => fakeChild), 'explorer.exe');
   } else {
     const expected = process.platform === 'darwin' ? 'open' : 'xdg-open';
     assert.equal(cmd, expected);
