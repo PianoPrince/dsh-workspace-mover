@@ -1080,3 +1080,226 @@ test('stashBackup：相邻前缀 id 的备份互不误删（前缀收紧）', ()
   const newest = files2.filter((f) => f.startsWith(`${a}.`)).sort().at(-1);
   assert.equal(readFileSync(join(dir, newest)).toString(), 'same-ms-2', '最新内容 last-wins');
 });
+
+//#region v0.9：回收站 + 备份管理
+
+/** 投影缓存 mock：插件在服务缺省时降级为 no-op，需要验证标题行为时挂上。 */
+function stubProjection(record) {
+  const table = {
+    records: new Map(record ? [['session-aaa', record]] : []),
+    get(key) { return this.records.get(String(key)) ?? null; },
+    async put(key, identity, rows) { this.records.set(String(key), { identity, rows }); },
+    async delete(key) { return this.records.delete(String(key)); },
+    async update(key, fn) {
+      const rec = this.records.get(String(key));
+      if (!rec) throw new Error(`missing-key ${key}`);
+      const next = fn(rec);
+      this.records.set(String(key), next);
+      return next;
+    }
+  };
+  const prevGet = ctx.get;
+  ctx.get = (key) => { if (key === 'sessionProjectionCache') return { table }; return prevGet ? prevGet(key) : undefined; };
+  return table;
+}
+
+test('mover.session.delete：移入回收站并完成四件套清理', async () => {
+  apply(ctx);
+  sharedIndex.sessionPaths.set('session-aaa', A);
+  entityA.record.sessionIds.push('session-aaa');
+  sharedIndex.headers.set('session-aaa', { id: 'session-aaa', cwd: A, title: 'Alpha discussion' });
+  const table = stubProjection({ identity: { createdAt: 1720000000000, cwd: A }, rows: { title: { ver: 1, seq: 3, val: 'Alpha discussion' } } });
+
+  const res = await call('mover.session.delete', { sessionId: 'session-aaa' });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.title, 'Alpha discussion');
+  // ① 文件进回收站（原位消失）
+  assert.ok(!existsSync(artifactPath(root, A, 'session-aaa')));
+  const recycle = join(root, 'workspace-mover', 'recycle');
+  const entries = readdirSync(recycle);
+  assert.equal(entries.length, 1);
+  assert.ok(existsSync(join(recycle, entries[0], 'session', 'session.jsonl.zstd')));
+  // ② manifest 完整（含投影记录，供还原标题）
+  const manifest = JSON.parse(readFileSync(join(recycle, entries[0], 'wsm-manifest.json'), 'utf8'));
+  assert.equal(manifest.sessionId, 'session-aaa');
+  assert.equal(manifest.cwd, A);
+  assert.equal(manifest.ownerWorkspaceId, 'wid-a');
+  assert.equal(manifest.projection.rows.title.val, 'Alpha discussion');
+  // ③ 记账清空 ④ 索引清空 ⑤ 投影条目删除
+  assert.deepEqual(entityA.record.sessionIds, []);
+  assert.equal(sharedIndex.sessionPaths.get('session-aaa'), undefined);
+  assert.equal(table.records.has('session-aaa'), false);
+  // 回收站列表可见
+  const list = await call('mover.trash.list');
+  assert.equal(list.value.items.length, 1);
+  assert.equal(list.value.items[0].sessionId, 'session-aaa');
+  assert.equal(list.value.items[0].title, 'Alpha discussion');
+  assert.equal(list.value.items[0].ownerWorkspaceId, 'wid-a');
+});
+
+test('mover.session.delete：常驻内存的会话拒绝删除', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  ctx.get = (key) => (key === 'sessions' ? { get: () => ({ id: 'session-aaa' }) } : undefined);
+  const res = await call('mover.session.delete', { sessionId: 'session-aaa' });
+  assert.equal(res.ok, false);
+  assert.match(res.error.message, /resident in memory/);
+  assert.ok(existsSync(artifactPath(root, A, 'session-aaa')), 'file untouched');
+});
+
+test('mover.session.delete：归档会话删除时同步移出归档集', async () => {
+  apply(ctx);
+  sharedIndex.sessionPaths.set('session-aaa', A);
+  entityA.record.sessionIds.push('session-aaa');
+  ctx.workspaceRegistry.archivedSessionIds = ['session-aaa'];
+  stubRegistryState();
+  const res = await call('mover.session.delete', { sessionId: 'session-aaa' });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.deepEqual(ctx.workspaceRegistry.archivedSessionIds, []);
+  const list = await call('mover.trash.list');
+  assert.equal(list.value.items[0].archived, true, 'manifest 记录归档状态供还原');
+});
+
+test('mover.trash.restore：还原到原路径并回写记账、投影标题、归档集', async () => {
+  apply(ctx);
+  sharedIndex.sessionPaths.set('session-aaa', A);
+  entityA.record.sessionIds.push('session-aaa');
+  sharedIndex.headers.set('session-aaa', { id: 'session-aaa', cwd: A, title: 'Alpha discussion' });
+  ctx.workspaceRegistry.archivedSessionIds = ['session-aaa'];
+  stubRegistryState();
+  const table = stubProjection({ identity: { createdAt: 1720000000000, cwd: A }, rows: { title: { ver: 1, seq: 3, val: 'Alpha discussion' } } });
+  await call('mover.session.delete', { sessionId: 'session-aaa' });
+  assert.ok(!existsSync(artifactPath(root, A, 'session-aaa')));
+
+  const res = await call('mover.trash.restore', { sessionId: 'session-aaa' });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.workspaceId, 'wid-a');
+  assert.ok(existsSync(artifactPath(root, A, 'session-aaa')), 'artifact back at A');
+  assert.equal(readHeader(readFileSync(artifactPath(root, A, 'session-aaa'))).cwd, A);
+  assert.deepEqual(entityA.record.sessionIds, ['session-aaa'], 're-attached to A');
+  const rec = table.records.get('session-aaa');
+  assert.equal(rec.identity.cwd, A, 'identity.cwd 对齐原路径');
+  assert.equal(rec.rows.title.val, 'Alpha discussion', '标题投影回写');
+  assert.deepEqual(ctx.workspaceRegistry.archivedSessionIds, ['session-aaa'], '归档状态还原');
+  const list = await call('mover.trash.list');
+  assert.equal(list.value.items.length, 0, '回收站条目清除');
+});
+
+test('mover.trash.restore：指定其他分组时先回原位再走完整迁移', async () => {
+  apply(ctx);
+  sharedIndex.sessionPaths.set('session-aaa', A);
+  entityA.record.sessionIds.push('session-aaa');
+  sharedIndex.headers.set('session-aaa', { id: 'session-aaa', cwd: A, title: 'Alpha discussion' });
+  await call('mover.session.delete', { sessionId: 'session-aaa' });
+  const res = await call('mover.trash.restore', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.moved?.moved, true, 'went through moveSession pipeline');
+  assert.equal(readHeader(readFileSync(artifactPath(root, B, 'session-aaa'))).cwd, B);
+  assert.deepEqual(entityB.record.sessionIds, ['session-aaa']);
+  assert.ok(existsSync(join(root, 'workspace-mover', 'backups')), 'moveSession created a backup');
+  const list = await call('mover.trash.list');
+  assert.equal(list.value.items.length, 0);
+});
+
+test('mover.trash.restore：原位置无分组且未给 target 时明确报错', async () => {
+  apply(ctx);
+  sharedIndex.sessionPaths.set('session-aaa', A);
+  entityA.record.sessionIds.push('session-aaa');
+  await call('mover.session.delete', { sessionId: 'session-aaa' });
+  ctx.workspaceRegistry.entities.delete('wid-a'); // 模拟原工作区被删除
+  const res = await call('mover.trash.restore', { sessionId: 'session-aaa' });
+  assert.equal(res.ok, false);
+  assert.match(res.error.message, /no registered workspace/);
+});
+
+test('mover.trash.purge：单个与清空', async () => {
+  apply(ctx);
+  sharedIndex.sessionPaths.set('session-aaa', A);
+  entityA.record.sessionIds.push('session-aaa');
+  await call('mover.session.delete', { sessionId: 'session-aaa' });
+  const artifactB = artifactPath(root, B, 'session-bbb');
+  mkdirSync(dirname(artifactB), { recursive: true });
+  writeFileSync(artifactB, makeArtifact({ type: 'session', id: 'session-bbb', cwd: B, title: 'Beta' }));
+  sharedIndex.sessionPaths.set('session-bbb', B);
+  entityB.record.sessionIds.push('session-bbb');
+  await call('mover.session.delete', { sessionId: 'session-bbb' });
+  let list = await call('mover.trash.list');
+  assert.equal(list.value.items.length, 2);
+  const one = await call('mover.trash.purge', { sessionId: 'session-bbb' });
+  assert.equal(one.value.purged, 1);
+  list = await call('mover.trash.list');
+  assert.equal(list.value.items.length, 1);
+  const all = await call('mover.trash.purge', { all: true });
+  assert.equal(all.value.purged, 1);
+  list = await call('mover.trash.list');
+  assert.equal(list.value.items.length, 0);
+});
+
+test('mover.backups.list：按会话聚合、排序与总量', async () => {
+  apply(ctx);
+  const dir = join(root, 'workspace-mover', 'backups');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'session-aaa.1000.zstd'), Buffer.alloc(10, 1));
+  writeFileSync(join(dir, 'session-aaa.2000.zstd'), Buffer.alloc(20, 2));
+  writeFileSync(join(dir, 'session-bbb.1500.zstd'), Buffer.alloc(5, 3));
+  const res = await call('mover.backups.list');
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.items.length, 2);
+  const aaa = res.value.items.find((it) => it.sessionId === 'session-aaa');
+  assert.equal(aaa.count, 2);
+  assert.equal(aaa.totalBytes, 30);
+  assert.equal(aaa.oldest, 1000);
+  assert.equal(aaa.newest, 2000);
+  assert.equal(res.value.items[0].sessionId, 'session-aaa', 'newest 降序');
+  assert.equal(res.value.totalBytes, 35);
+});
+
+test('mover.backups.restore：默认回原 cwd 并回读校验；注册表占用时报错', async () => {
+  apply(ctx);
+  rmSync(dirname(artifactPath(root, A, 'session-aaa')), { recursive: true, force: true }); // 移除夹具：恢复前提是磁盘上无此会话
+  const bytes = makeArtifact({ type: 'session', id: 'session-aaa', cwd: A, title: 'Alpha discussion' });
+  stashBackup('session-aaa', bytes);
+  assert.ok(!existsSync(artifactPath(root, A, 'session-aaa')));
+  const res = await call('mover.backups.restore', { sessionId: 'session-aaa' });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.workspaceId, 'wid-a');
+  const restoredHeader = readHeader(readFileSync(artifactPath(root, A, 'session-aaa')));
+  assert.equal(restoredHeader.cwd, A);
+  assert.deepEqual(entityA.record.sessionIds, ['session-aaa']);
+  // 同 id 已恢复 → 再次恢复被注册表冲突检查拒绝
+  rmSync(join(root, 'workspace-mover', 'backups'), { recursive: true, force: true });
+  stashBackup('session-aaa', bytes);
+  const res2 = await call('mover.backups.restore', { sessionId: 'session-aaa' });
+  assert.equal(res2.ok, false);
+  assert.match(res2.error.message, /already exists/);
+});
+
+test('mover.backups.restore：指定其他分组时改写头 cwd 并挂账', async () => {
+  apply(ctx);
+  rmSync(dirname(artifactPath(root, A, 'session-aaa')), { recursive: true, force: true }); // 移除夹具：避免 attach 校验撞上旧副本
+  const bytes = makeArtifact({ type: 'session', id: 'session-aaa', cwd: A, title: 'Alpha discussion' });
+  stashBackup('session-aaa', bytes);
+  const res = await call('mover.backups.restore', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  const header = readHeader(readFileSync(artifactPath(root, B, 'session-aaa')));
+  assert.equal(header.cwd, B);
+  assert.deepEqual(entityB.record.sessionIds, ['session-aaa']);
+});
+
+test('mover.backups.deleteOne：指定单份与全部份', async () => {
+  apply(ctx);
+  const dir = join(root, 'workspace-mover', 'backups');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'session-aaa.1000.zstd'), Buffer.from('a'));
+  stashBackup('session-aaa', Buffer.from('b'));
+  stashBackup('session-bbb', Buffer.from('c'));
+  const before = readdirSync(dir);
+  assert.equal(before.filter((f) => f.startsWith('session-aaa.')).length, 2);
+  const manual = before.find((f) => f.startsWith('session-aaa.'));
+  const one = await call('mover.backups.deleteOne', { sessionId: 'session-aaa', fileName: manual });
+  assert.equal(one.value.deleted, 1);
+  const all = await call('mover.backups.deleteOne', { sessionId: 'session-aaa' });
+  assert.equal(all.value.deleted, 1);
+  assert.equal(readdirSync(dir).filter((f) => f.startsWith('session-aaa.')).length, 0);
+  assert.equal(readdirSync(dir).filter((f) => f.startsWith('session-bbb.')).length, 1, '其他会话备份不受影响');
+});

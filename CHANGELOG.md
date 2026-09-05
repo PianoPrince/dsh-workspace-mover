@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## [0.9.0] - 2026-09-05
+
+### Added
+
+- **Session recycle bin**: the rescue panel's orphaned / unregistered / misfiled / archived rows gain a "Delete" action that moves the whole session into `$DSH_HOME/workspace-mover/recycle/` behind a manifest recording everything needed to bring it back (title, original path, owning group, archive flag, projection snapshot). Deletion clears all four traces — files, workspace accounting, registry indexes, and the projection-cache entry — so nothing lingers as a ghost or stale row. Sessions still resident in harness memory are refused with a clear message (their live objects would zombie-recreate files).
+- **Restore from the recycle bin**: one click back to the original path (re-attaching accounting, re-writing the projection title, and re-entering the archived set when the session was archived), or into any other group — which routes through the full moveSession pipeline (backup, header rewrite, hot fixes, move history). If the original spot is occupied or its workspace is gone, the restore dialog opens with a target picker.
+- **Purge**: single item or empty-the-bin, each behind an explicit confirmation.
+- **Backup management**: every move already kept rolling byte-level backups; they are now visible — grouped per session with copy count, total size, and date span, plus the overall footprint — with one-click restore (to the backup's original location or into any group, header round-trip verified before accounting) and per-session backup deletion.
+- New RPC endpoints: `mover.session.delete`, `mover.trash.list / restore / purge`, `mover.backups.list / restore / deleteOne`. Projection-cache operations degrade gracefully on hosts without the service (stale entries are harmless by design); archive-set changes skip with a warning when the registry lacks the durable state channel.
+- Tests 47 → 58 (delete four-way cleanup, resident refusal, archived delete/restore symmetry, restore to original path / other group / missing workspace, purge, backup aggregation, restore with round-trip verification, per-session backup deletion).
+
 ## [0.8.1] - 2026-09-05
 
 ### Fixed

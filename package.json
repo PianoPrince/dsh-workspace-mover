@@ -1,6 +1,6 @@
 {
   "name": "dsh-workspace-mover",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "description": "在 DSH 侧边栏安全迁移会话：真迁移原始档案，支持失联会话恢复、移动历史和一键撤回。",
   "type": "module",
   "main": "lib/index.js",

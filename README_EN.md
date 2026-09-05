@@ -49,6 +49,8 @@ DeepSeek Harness's sidebar supports drag-to-reorder within a workspace, but drop
   - All go through the same backup + rollback pipeline
 - **🧹 Group merge**: move a whole group into a target via the header's "…" menu, then delete the emptied source group right away — a merge in two commands
 - **🗂️ Empty group cleanup**: the rescue panel lists only truly zero-member workspaces (archived sessions and ghost roster entries count as members, so this never misreports); delete one or all — only the registration is removed, no session is touched
+- **🗑️ Session recycle bin**: move anomalous or archived sessions into the recycle bin from the rescue panel — files, title, membership and archive state are kept whole; restore to the original spot or any other group at any time; purging requires an explicit confirmation
+- **💾 Backup management**: the byte-level backups that every move already creates are finally visible — grouped per session with copy count, footprint and date span; one-click restore (header round-trip verified before accounting) or per-session cleanup
 - **📂 Open folder**: a one-click entry in the header's "…" menu opens the group's directory in the system file manager
 - **⏪ Move history & undo**: Keeps the last 100 cross-workspace moves; bulk moves aggregate into one entry with whole-set undo, and undo generates its own backup with rollback protection
 - **🏷️ Session titles first**: Confirmation dialogs, rescue lists, and recent moves show session titles when available, falling back to "Untitled session"
@@ -207,6 +209,12 @@ Compatibility when installed alongside other plugin categories:
 **DSH version sensitivities** (not plugin conflicts): unarchive writes through the registry's durable state channel and reports clearly on hosts that lack it rather than erroring; projection-cache titles are parsed defensively against the v3 shape and fall back to the on-disk header if the file is missing.
 
 ## 🆕 Recent Updates
+
+### v0.9.0 · 2026-09-05
+
+- Session recycle bin: the rescue panel's rows gain "Delete" — sessions move into the recycle bin whole (files, title, membership, archive state), restored to the original spot or any group in one click, purged only after confirmation
+- Backup management: the byte-level backups created by every move are finally visible — grouped per session with copy count / footprint / date span, one-click restore (header round-trip verified before accounting) or per-session deletion
+- Deletion is a four-way cleanup: files, workspace accounting, projection cache and registry indexes in one pass — no ghosts left behind
 
 ### v0.8.0 · 2026-09-05
 

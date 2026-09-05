@@ -110,7 +110,23 @@ window.__ModuleLoader__.load({
 				emptyWsConfirmOne: "删除空分组「{title}」？\n\n{path}\n\n只移除分组登记，不影响任何会话。",
 				emptyWsConfirmAll: "删除全部 {n} 个空分组？\n\n只移除分组登记，不影响任何会话。",
 				emptyWsDone: "✓ 已删除 {n} 个空分组",
-				emptyWsStale: "「{title}」刚刚有了新成员，已跳过"
+				emptyWsStale: "「{title}」刚刚有了新成员，已跳过",
+				deleteBtn: "删除",
+				deleteConfirm: "把「{title}」移入回收站？\n\n回收站里的会话随时可以还原或彻底删除。",
+				deletedMsg: "✓ 已移入回收站",
+				trashCaption: "回收站",
+				trashHelp: "被删除的会话完整保留在这里（文件、标题、归属信息），可还原到原位置或任意其他分组；只有「彻底删除」才会真正清掉磁盘文件。",
+				purgeBtn: "彻底删除",
+				purgeConfirm: "彻底删除「{title}」？此操作不可撤销。",
+				purgeAllBtn: "清空回收站",
+				purgeAllConfirm: "彻底删除回收站里的全部 {n} 个会话？此操作不可撤销。",
+				purgedMsg: "✓ 已彻底删除 {n} 项",
+				backupsCaption: "备份",
+				backupsHelp: "每次迁移前自动生成的字节级备份都在这里。可以把会话恢复回备份时的原位置（若那里没有同 id 会话），或恢复到任意其他分组。",
+				backupMeta: "{n} 份 · {size} · {range}",
+				backupDeleteBtn: "删除备份",
+				backupDeleteConfirm: "删除「{title}」的 {n} 份备份？删除后无法再从备份恢复。",
+				backupDeletedMsg: "✓ 已删除 {n} 份备份"
 			},
 			en: {
 				confirmTitle: "Move session across workspaces",
@@ -206,7 +222,23 @@ window.__ModuleLoader__.load({
 				emptyWsConfirmOne: "Delete empty group \"{title}\"?\n\n{path}\n\nOnly the group registration is removed; no session is touched.",
 				emptyWsConfirmAll: "Delete all {n} empty groups?\n\nOnly the group registration is removed; no session is touched.",
 				emptyWsDone: "✓ Deleted {n} empty group(s)",
-				emptyWsStale: "\"{title}\" gained members just now; skipped"
+				emptyWsStale: "\"{title}\" gained members just now; skipped",
+				deleteBtn: "Delete",
+				deleteConfirm: "Move \"{title}\" to the recycle bin?\n\nTrashed sessions can be restored or purged at any time.",
+				deletedMsg: "✓ Moved to the recycle bin",
+				trashCaption: "Recycle bin",
+				trashHelp: "Deleted sessions are kept here whole (files, title, membership). Restore them to the original spot or any other group; only \"Purge\" actually deletes files from disk.",
+				purgeBtn: "Purge",
+				purgeConfirm: "Purge \"{title}\"? This cannot be undone.",
+				purgeAllBtn: "Empty recycle bin",
+				purgeAllConfirm: "Purge all {n} sessions in the recycle bin? This cannot be undone.",
+				purgedMsg: "✓ Purged {n} item(s)",
+				backupsCaption: "Backups",
+				backupsHelp: "Every move creates a byte-level backup first; they are all listed here. Restore a session back to where the backup was taken (if no session with the same id lives there), or into any other group.",
+				backupMeta: "{n} copies · {size} · {range}",
+				backupDeleteBtn: "Delete backups",
+				backupDeleteConfirm: "Delete the {n} backup copies of \"{title}\"? They cannot be restored from afterwards.",
+				backupDeletedMsg: "✓ Deleted {n} backup copy(ies)"
 			}
 		};
 		const lang = (navigator.language || "en").toLowerCase().startsWith("zh") ? "zh" : "en";
@@ -492,6 +524,19 @@ window.__ModuleLoader__.load({
 			return text && text !== sessionId ? text : t("unnamedSession");
 		}
 
+		function fmtBytes(n) {
+			if (!Number.isFinite(n) || n <= 0) return "0 B";
+			if (n >= 1048576) return `${(n / 1048576).toFixed(1)} MB`;
+			if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`;
+			return `${n} B`;
+		}
+
+		function fmtRange(item) {
+			const from = item.oldest ? new Date(item.oldest).toLocaleDateString() : "";
+			const to = item.newest ? new Date(item.newest).toLocaleDateString() : "";
+			return from === to ? from : `${from} ~ ${to}`;
+		}
+
 		/** 「?」悬浮说明按钮：hover/长按显示白话解释，不占版面。 */
 		const HelpDot = ({ text }) => h("span", { className: "wsm-help", title: text }, "?");
 
@@ -509,6 +554,8 @@ window.__ModuleLoader__.load({
 			const [note, setNote] = useState("");
 			const [history, setHistory] = useState([]);
 			const [archived, setArchived] = useState(null);
+			const [trash, setTrash] = useState(null);
+			const [backups, setBackups] = useState(null);
 
 			const call = async (endpoint, payload) => {
 				const res = await rpcCall(endpoint, payload ?? {});
@@ -523,12 +570,14 @@ window.__ModuleLoader__.load({
 			const runScan = async () => {
 				setBusy(true);
 				try {
-					const [s, w, h, a, ar] = await Promise.all([call("mover.scan"), call("mover.workspaces"), call("mover.history"), call("mover.ws.audit"), call("mover.archived")]);
+					const [s, w, h, a, ar, tr, bp] = await Promise.all([call("mover.scan"), call("mover.workspaces"), call("mover.history"), call("mover.ws.audit"), call("mover.archived"), call("mover.trash.list"), call("mover.backups.list")]);
 					setScan(s);
 					setWorkspaces(w.items ?? []);
 					setHistory(h.items ?? []);
 					setAudit(a);
 					setArchived(ar);
+					setTrash(tr);
+					setBackups(bp);
 				} catch (err) {
 					setNote(t("failed", { msg: err?.message ?? err }));
 				} finally {
@@ -749,6 +798,160 @@ window.__ModuleLoader__.load({
 				}
 			};
 
+			// 删除会话 → 回收站（四件套清理，manifest 可还原）
+			const deleteToTrash = async (item) => {
+				if (!window.confirm(t("deleteConfirm", { title: item.title || t("unnamedSession") }))) return;
+				setBusy(true);
+				setNote("");
+				try {
+					await call("mover.session.delete", { sessionId: item.sessionId });
+					setNote(t("deletedMsg"));
+					refreshWorkspaces();
+					await runScan();
+				} catch (err) {
+					setNote(t("failed", { msg: err?.message ?? err }));
+				} finally {
+					setBusy(false);
+				}
+			};
+
+			// 回收站还原：先试原位置（最忠实），原位置被占/无分组时打开选择器换目标
+			const trashRestore = async (item) => {
+				setBusy(true);
+				setNote("");
+				try {
+					const res = await call("mover.trash.restore", { sessionId: item.sessionId });
+					const wsTitle = workspaces.find((w) => w.workspaceId === res?.workspaceId)?.title ?? res?.workspaceId ?? "";
+					setNote(t("restoreDone", { ws: wsTitle }));
+					if (res?.workspaceId) scheduleRecencyFix(ctx, res.workspaceId, [item.sessionId]);
+					refreshWorkspaces();
+					await runScan();
+				} catch (err) {
+					const msg = String(err?.message ?? err);
+					if (!/no registered workspace|already exists/.test(msg)) {
+						setNote(t("failed", { msg }));
+						return;
+					}
+					setBusy(false);
+					const targetId = await pickRestoreTarget({ item, workspaces, suggestId: item.ownerWorkspaceId });
+					if (!targetId) return;
+					setBusy(true);
+					try {
+						const res2 = await call("mover.trash.restore", { sessionId: item.sessionId, targetWorkspaceId: targetId });
+						const wsTitle = workspaces.find((w) => w.workspaceId === res2?.workspaceId)?.title ?? res2?.workspaceId ?? "";
+						setNote(t("restoreDone", { ws: wsTitle }));
+						if (res2?.workspaceId) scheduleRecencyFix(ctx, res2.workspaceId, [item.sessionId]);
+						refreshWorkspaces();
+						await runScan();
+					} catch (err2) {
+						setNote(t("failed", { msg: err2?.message ?? err2 }));
+					} finally {
+						setBusy(false);
+					}
+				}
+			};
+
+			const trashRestoreTo = async (item) => {
+				const targetId = await pickRestoreTarget({ item, workspaces, suggestId: item.ownerWorkspaceId });
+				if (!targetId) return;
+				setBusy(true);
+				setNote("");
+				try {
+					const res = await call("mover.trash.restore", { sessionId: item.sessionId, targetWorkspaceId: targetId });
+					const wsTitle = workspaces.find((w) => w.workspaceId === res?.workspaceId)?.title ?? res?.workspaceId ?? "";
+					setNote(t("restoreDone", { ws: wsTitle }));
+					if (res?.workspaceId) scheduleRecencyFix(ctx, res.workspaceId, [item.sessionId]);
+					refreshWorkspaces();
+					await runScan();
+				} catch (err) {
+					setNote(t("failed", { msg: err?.message ?? err }));
+				} finally {
+					setBusy(false);
+				}
+			};
+
+			const purgeOne = async (item) => {
+				if (!window.confirm(t("purgeConfirm", { title: item.title || t("unnamedSession") }))) return;
+				setBusy(true);
+				setNote("");
+				try {
+					const res = await call("mover.trash.purge", { sessionId: item.sessionId });
+					setNote(t("purgedMsg", { n: res?.purged ?? 1 }));
+					await runScan();
+				} catch (err) {
+					setNote(t("failed", { msg: err?.message ?? err }));
+				} finally {
+					setBusy(false);
+				}
+			};
+
+			const purgeAll = async (list) => {
+				if (!window.confirm(t("purgeAllConfirm", { n: list.length }))) return;
+				setBusy(true);
+				setNote("");
+				try {
+					const res = await call("mover.trash.purge", { all: true });
+					setNote(t("purgedMsg", { n: res?.purged ?? list.length }));
+					await runScan();
+				} catch (err) {
+					setNote(t("failed", { msg: err?.message ?? err }));
+				} finally {
+					setBusy(false);
+				}
+			};
+
+			// 备份恢复：默认回备份时的原位置；原位置缺分组/被占时打开选择器换目标
+			const backupRestore = async (item) => {
+				setBusy(true);
+				setNote("");
+				const finish = (res) => {
+					const wsTitle = workspaces.find((w) => w.workspaceId === res?.workspaceId)?.title ?? res?.workspaceId ?? "";
+					setNote(t("restoreDone", { ws: wsTitle }));
+					if (res?.workspaceId) scheduleRecencyFix(ctx, res.workspaceId, [item.sessionId]);
+					refreshWorkspaces();
+					return runScan();
+				};
+				try {
+					finish(await call("mover.backups.restore", { sessionId: item.sessionId }));
+				} catch (err) {
+					const msg = String(err?.message ?? err);
+					if (!/no registered workspace|already exists/.test(msg)) {
+						setNote(t("failed", { msg }));
+						return;
+					}
+					setBusy(false);
+					const normalized = (p) => String(p ?? "").replace(/[\\/]+$/, "").toLowerCase();
+					const suggestId = workspaces.find((w) => normalized(w.path) === normalized(item.cwd))?.workspaceId ?? null;
+					const targetId = await pickRestoreTarget({ item, workspaces, suggestId });
+					if (!targetId) return;
+					setBusy(true);
+					try {
+						finish(await call("mover.backups.restore", { sessionId: item.sessionId, targetWorkspaceId: targetId }));
+					} catch (err2) {
+						setNote(t("failed", { msg: err2?.message ?? err2 }));
+					} finally {
+						setBusy(false);
+					}
+					return;
+				}
+				setBusy(false);
+			};
+
+			const backupDelete = async (item) => {
+				if (!window.confirm(t("backupDeleteConfirm", { title: item.title || item.sessionId, n: item.count }))) return;
+				setBusy(true);
+				setNote("");
+				try {
+					const res = await call("mover.backups.deleteOne", { sessionId: item.sessionId });
+					setNote(t("backupDeletedMsg", { n: res?.deleted ?? 0 }));
+					await runScan();
+				} catch (err) {
+					setNote(t("failed", { msg: err?.message ?? err }));
+				} finally {
+					setBusy(false);
+				}
+			};
+
 			const items = scan?.items ?? [];
 			const orphaned = items.filter((it) => it.status === "orphaned");
 			const unregistered = items.filter((it) => it.status === "unregistered");
@@ -756,6 +959,8 @@ window.__ModuleLoader__.load({
 			const brokenWorkspaces = (audit?.items ?? []).filter((it) => it.status !== "ok");
 			const emptyWorkspaces = workspaces.filter((w) => (w.rawSessionCount ?? 0) === 0);
 			const archivedItems = archived?.items ?? [];
+			const trashItems = trash?.items ?? [];
+			const backupItems = backups?.items ?? [];
 			const counts = scan?.counts ?? {};
 			const summaryParts = [
 				["orphaned", t("stalePath")],
@@ -801,7 +1006,8 @@ window.__ModuleLoader__.load({
 							h("option", { value: "" }, t("allWorkspaces")),
 							workspaces.map((w) => h("option", { key: w.workspaceId, value: w.workspaceId }, `${w.title}（${w.path}）`))
 						),
-						h("button", { className: "wsm-btn small primary", disabled: busy || !picked[it.sessionId], onClick: () => void relink(it) }, t("relinkBtn"))
+						h("button", { className: "wsm-btn small primary", disabled: busy || !picked[it.sessionId], onClick: () => void relink(it) }, t("relinkBtn")),
+						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void deleteToTrash(it) }, t("deleteBtn"))
 					))
 				) : null,
 				unregistered.length > 0 ? h(Caption, { text: t("unregCaption"), help: t("helpUnreg") }) : null,
@@ -821,26 +1027,28 @@ window.__ModuleLoader__.load({
 									workspaces.map((w) => h("option", { key: w.workspaceId, value: w.workspaceId }, `${w.title}（${w.path}）`))
 								),
 								h("button", { className: "wsm-btn small primary", disabled: busy || !picked[it.sessionId], onClick: () => void relink(it) }, t("relinkBtn"))
-							)
+							),
+						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void deleteToTrash(it) }, t("deleteBtn"))
 					))
 				) : null,
 				misfiled.length > 0 ? h(Caption, { text: `${t("misfiledCaption")} (${misfiled.length})`, help: t("misfiledHelp") }) : null,
 				misfiled.length > 1 ? h("div", { className: "wsm-scanrow" },
 					h("button", { className: "wsm-btn small primary", disabled: busy, onClick: () => void homeAll(misfiled) }, t("homeAllBtn"))
 				) : null,
-				misfiled.length > 0 ? h("div", { className: "wsm-list" },
-					misfiled.map((it) => {
-						const ownerNames = (it.ownerWorkspaceIds ?? [])
-							.map((wid) => workspaces.find((w) => w.workspaceId === wid)?.title ?? wid.slice(0, 8))
-							.join("/") || "?";
-						return h("div", { className: "wsm-item", key: it.sessionId },
-							h("span", { className: "wsm-mono" }, it.title || t("unnamedSession")),
-							it.archived ? h("span", { className: "wsm-badge" }, "archived") : null,
-							h("span", { className: "wsm-cwd", title: `${it.homePath ?? it.cwd ?? "?"}` }, `${ownerNames} → ${it.homeTitle ?? "?"}`),
-							h("button", { className: "wsm-btn small primary", disabled: busy, onClick: () => void homeOne(it) }, t("homeBtn"))
-						);
-					})
-				) : null,
+					misfiled.length > 0 ? h("div", { className: "wsm-list" },
+						misfiled.map((it) => {
+							const ownerNames = (it.ownerWorkspaceIds ?? [])
+								.map((wid) => workspaces.find((w) => w.workspaceId === wid)?.title ?? wid.slice(0, 8))
+								.join("/") || "?";
+							return h("div", { className: "wsm-item", key: it.sessionId },
+								h("span", { className: "wsm-mono" }, it.title || t("unnamedSession")),
+								it.archived ? h("span", { className: "wsm-badge" }, "archived") : null,
+								h("span", { className: "wsm-cwd", title: `${it.homePath ?? it.cwd ?? "?"}` }, `${ownerNames} → ${it.homeTitle ?? "?"}`),
+								h("button", { className: "wsm-btn small primary", disabled: busy, onClick: () => void homeOne(it) }, t("homeBtn")),
+								h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void deleteToTrash(it) }, t("deleteBtn"))
+							);
+						})
+					) : null,
 				archivedItems.length > 0 ? h(Caption, { text: `${t("archivedCaption")} (${archivedItems.length})`, help: t("archivedHelp") }) : null,
 				archivedItems.length > 0 ? h("div", { className: "wsm-list" },
 					archivedItems.map((it) => h("div", { className: "wsm-item", key: it.sessionId },
@@ -855,7 +1063,22 @@ window.__ModuleLoader__.load({
 								onClick: () => void restoreOne(it)
 							},
 							t("restoreBtn")),
-						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void restoreTo(it) }, t("restoreToBtn"))
+						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void restoreTo(it) }, t("restoreToBtn")),
+						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void deleteToTrash(it) }, t("deleteBtn"))
+					))
+				) : null,
+				trashItems.length > 0 ? h(Caption, { text: `${t("trashCaption")} (${trashItems.length})`, help: t("trashHelp") }) : null,
+				trashItems.length > 1 ? h("div", { className: "wsm-scanrow" },
+					h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void purgeAll(trashItems) }, t("purgeAllBtn"))
+				) : null,
+				trashItems.length > 0 ? h("div", { className: "wsm-list" },
+					trashItems.map((it) => h("div", { className: "wsm-item", key: it.entry },
+						h("span", { className: "wsm-mono" }, it.title || t("unnamedSession")),
+						h("span", { className: "wsm-cwd", title: it.cwd ?? "" }, it.ownerTitle || t("ownerGoneBadge")),
+						h("span", { className: "wsm-cwd" }, it.deletedAt ? new Date(it.deletedAt).toLocaleDateString() : ""),
+						h("button", { className: "wsm-btn small primary", disabled: busy, onClick: () => void trashRestore(it) }, t("restoreBtn")),
+						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void trashRestoreTo(it) }, t("restoreToBtn")),
+						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void purgeOne(it) }, t("purgeBtn"))
 					))
 				) : null,
 				emptyWorkspaces.length > 0 ? h(Caption, { text: `${t("emptyWsCaption")} (${emptyWorkspaces.length})`, help: t("emptyWsHelp") }) : null,
@@ -885,6 +1108,15 @@ window.__ModuleLoader__.load({
 						);
 					})) : h("div", { className: "wsm-note" }, t("historyEmpty"))
 				),
+				backupItems.length > 0 ? h(Caption, { text: `${t("backupsCaption")} (${backupItems.length})`, help: t("backupsHelp") }) : null,
+				backupItems.length > 0 ? h("div", { className: "wsm-list" },
+					backupItems.map((it) => h("div", { className: "wsm-item", key: it.sessionId },
+						h("span", { className: "wsm-mono" }, it.title || t("unnamedSession")),
+						h("span", { className: "wsm-cwd", title: it.cwd ?? "" }, t("backupMeta", { n: it.count, size: fmtBytes(it.totalBytes), range: fmtRange(it) })),
+						h("button", { className: "wsm-btn small primary", disabled: busy, onClick: () => void backupRestore(it) }, t("restoreBtn")),
+						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void backupDelete(it) }, t("backupDeleteBtn"))
+					))
+				) : null,
 				scan && orphaned.length === 0 && unregistered.length === 0 && items.length > 0
 					? h("div", { className: "wsm-note" }, t("allClear"))
 					: null,
@@ -1404,7 +1636,9 @@ window.__ModuleLoader__.load({
 					view: () => { const v = resolveViewStore(ctx); return v ? v.getSnapshot() : null; },
 					resolveViewStore: () => resolveViewStore(ctx),
 					fix: (id, moved) => scheduleRecencyFix(ctx, id, moved),
-					rowId: (el) => rowSessionId(el)
+					rowId: (el) => rowSessionId(el),
+					trash: () => rpcCall(CHANNEL, "mover.trash.list"),
+					backups: () => rpcCall(CHANNEL, "mover.backups.list")
 				};
 			} catch { /* ignore */ }
 
