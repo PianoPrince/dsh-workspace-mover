@@ -298,7 +298,7 @@ Compatibility when installed alongside other plugin categories:
 - Sessions still resident in harness memory refuse deletion (their live objects would zombie-recreate files) and get an actionable toast instead;
 - Only sessions mid-turn are rejected by default; idle resident sessions get their write-path ownership fixed after moving, preventing history forks;
 - All registry/persistence internals are wrapped in try/catch—on failure the plugin degrades to functional-with-a-restart-hint instead of breaking;
-- Compatibility targets: Node ≥ 22, dsh 0.1.1-rc.2; core pure functions and end-to-end sandbox tests ship via `npm test` (64 cases covering rollback paths, rescue scan/repair, history undo, workspace repoint, post-move verification, recycle bin, and backup restore).
+- Compatibility targets: Node ≥ 22, dsh 0.1.1-rc.2; core pure functions and end-to-end sandbox tests ship via `npm test` (70 cases covering rollback paths, rescue scan/repair, history undo, workspace repoint, post-move verification, recycle bin and backup restore, task center, and data-protection cleanup).
 
 ## ⚠️ Known Limitations
 
