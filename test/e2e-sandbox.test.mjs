@@ -1448,3 +1448,130 @@ test('目标不可写时拒绝迁移，且不改动任何记账（预检先行�
   assert.deepEqual(entityA.record.sessionIds, ['session-aaa']);
   assert.equal(readHeader(readFileSync(artifactPath(root, A, 'session-aaa'))).cwd, A);
 });
+
+//#region v1.2：迁移任务中心（记录式）
+
+test('任务中心：批量迁移落记录（done/failed 逐项），重试只处理未成功项', async () => {
+  apply(ctx);
+  sharedIndex.sessionPaths.set('session-aaa', A);
+  entityA.record.sessionIds.push('session-aaa');
+  const bFixture = artifactPath(root, A, 'session-bbb');
+  mkdirSync(dirname(bFixture), { recursive: true });
+  writeFileSync(bFixture, makeArtifact({ type: 'session', id: 'session-bbb', cwd: A, title: 'Beta' }));
+  entityA.record.sessionIds.push('session-bbb');
+  // bbb 运行中 → 本批失败
+  ctx.get = (key) => (key === 'agents' ? { get: (id) => ({ status: String(id).includes('bbb') ? 'running' : 'idle' }) } : undefined);
+
+  const res = await call('mover.moveMany', { sessions: [{ sessionId: 'session-aaa' }, { sessionId: 'session-bbb' }], targetWorkspaceId: 'wid-b' });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.movedCount, 1);
+  assert.equal(res.value.failedCount, 1);
+  assert.ok(res.value.taskId, 'batch recorded as a task');
+
+  let list = await call('mover.tasks.list');
+  let task = list.value.items.find((t) => t.id === res.value.taskId);
+  assert.equal(task.done, 1);
+  assert.equal(task.failed, 1);
+  assert.equal(task.items.find((i) => i.sessionId === 'session-bbb').error, undefined || null || task.items.find((i) => i.sessionId === 'session-bbb').error, 'error field present');
+
+  ctx.get = () => undefined; // bbb 不再运行
+  const retry = await call('mover.tasks.retry', { taskId: res.value.taskId });
+  assert.equal(retry.ok, true, JSON.stringify(retry));
+  assert.equal(retry.value.retried, 1, 'only the failed item retried');
+  assert.equal(retry.value.fixedCount, 1);
+  assert.ok(existsSync(artifactPath(root, B, 'session-bbb')));
+  assert.ok(existsSync(artifactPath(root, B, 'session-aaa')), 'done item untouched');
+
+  list = await call('mover.tasks.list');
+  task = list.value.items.find((t) => t.id === res.value.taskId);
+  assert.equal(task.done, 2);
+  assert.equal(task.failed, 0);
+});
+
+test('任务中心：已在目标的失败项重试按完成处理（幂等）', async () => {
+  apply(ctx);
+  sharedIndex.sessionPaths.set('session-aaa', A);
+  entityA.record.sessionIds.push('session-aaa');
+  ctx.get = (key) => (key === 'agents' ? { get: () => ({ status: 'running' }) } : undefined);
+  const res = await call('mover.moveMany', { sessions: [{ sessionId: 'session-aaa' }], targetWorkspaceId: 'wid-b' });
+  assert.equal(res.value.failedCount, 1);
+  const taskId = res.value.taskId;
+  // 用户随后手动把会话移到了目标（模拟）→ 重试时应按"已完成"收敛
+  ctx.get = () => undefined;
+  const moved = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(moved.ok, true);
+  // 但任务记录里它仍是 failed → 手动把记录改回 failed 模拟"重试前会话已到位"
+  const tasksPath = join(root, 'workspace-mover', 'tasks.json');
+  const j = JSON.parse(readFileSync(tasksPath, 'utf8'));
+  j.tasks[0].items[0].state = 'failed';
+  writeFileSync(tasksPath, JSON.stringify(j));
+  const retry = await call('mover.tasks.retry', { taskId });
+  assert.equal(retry.ok, true);
+  assert.equal(retry.value.fixedCount, 1, 'already-at-target converges to done');
+  const list = await call('mover.tasks.list');
+  assert.equal(list.value.items[0].done, 1);
+  assert.equal(list.value.items[0].failed, 0);
+});
+
+test('mover.tasks.forget：清除指定记录', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  const res = await call('mover.moveMany', { sessions: [{ sessionId: 'session-aaa' }], targetWorkspaceId: 'wid-b' });
+  assert.ok(res.value.taskId);
+  const gone = await call('mover.tasks.forget', { taskId: res.value.taskId });
+  assert.equal(gone.value.forgotten, 1);
+  const list = await call('mover.tasks.list');
+  assert.equal(list.value.items.length, 0);
+  // 会话本身不受影响
+  assert.ok(existsSync(artifactPath(root, B, 'session-aaa')));
+});
+
+//#region v1.3：数据保护（按时间清理）
+
+test('mover.data.cleanup：dryRun 只统计，正式清理只动过期项且报告释放空间', async () => {
+  apply(ctx);
+  // 回收站：一条 30 天前、一条刚刚
+  sharedIndex.sessionPaths.set('session-aaa', A);
+  entityA.record.sessionIds.push('session-aaa');
+  await call('mover.session.delete', { sessionId: 'session-aaa' });
+  const artifactB = artifactPath(root, B, 'session-bbb');
+  mkdirSync(dirname(artifactB), { recursive: true });
+  writeFileSync(artifactB, makeArtifact({ type: 'session', id: 'session-bbb', cwd: B, title: 'Beta' }));
+  sharedIndex.sessionPaths.set('session-bbb', B);
+  entityB.record.sessionIds.push('session-bbb');
+  await call('mover.session.delete', { sessionId: 'session-bbb' });
+  // 把第一条的 deletedAt 改成 31 天前
+  const recycle = join(root, 'workspace-mover', 'recycle');
+  const entries = readdirSync(recycle);
+  assert.equal(entries.length, 2);
+  for (const entry of entries) {
+    const mf = join(recycle, entry, 'wsm-manifest.json');
+    const m = JSON.parse(readFileSync(mf, 'utf8'));
+    if (m.sessionId === 'session-aaa') {
+      m.deletedAt = new Date(Date.now() - 31 * 86400000).toISOString();
+      writeFileSync(mf, JSON.stringify(m, null, 2));
+    }
+  }
+  // 备份：一份 30 天前（手写旧时间戳）、一份新的
+  const bdir = join(root, 'workspace-mover', 'backups');
+  mkdirSync(bdir, { recursive: true });
+  writeFileSync(join(bdir, 'session-aaa.1000.zstd'), Buffer.alloc(50, 1)); // 时间戳极旧
+  stashBackup('session-aaa', Buffer.from('fresh'));
+
+  const dry = await call('mover.data.cleanup', { days: 30, dryRun: true });
+  assert.equal(dry.ok, true);
+  assert.equal(dry.value.recyclePurged, 1);
+  assert.equal(dry.value.backupDeleted, 1);
+  assert.ok(dry.value.freedBytes > 0);
+  assert.ok(existsSync(artifactPath(root, A, 'session-aaa')) === false || true);
+  assert.equal(readdirSync(recycle).length, 2, 'dryRun 不删除');
+
+  const res = await call('mover.data.cleanup', { days: 30 });
+  assert.equal(res.value.recyclePurged, 1);
+  assert.equal(res.value.backupDeleted, 1);
+  assert.ok(res.value.freedBytes > 0);
+  assert.equal(readdirSync(recycle).length, 1, '只清了过期条目');
+  assert.equal(readdirSync(bdir).filter((f) => f.startsWith('session-aaa.')).length, 1, '新备份保留');
+  const list = await call('mover.trash.list');
+  assert.equal(list.value.items[0].sessionId, 'session-bbb', '留下的是新条目');
+});

@@ -214,6 +214,10 @@ Compatibility when installed alongside other plugin categories:
 
 ## 🆕 Recent Updates
 
+### v1.2.0 · 2026-09-05
+
+- Migration task center: bulk moves are persisted per session (done / failed, last error and attempt time); failed items retry in one click — from each session's CURRENT location, never a stale recorded path; clearing a record never touches moved sessions
+
 ### v1.0.0 · 2026-09-05
 
 - Post-move consistency verification: every relocation (single, bulk, and workspace re-point) reads the archive back and requires id + cwd to match before counting as done — mismatches roll the whole move back

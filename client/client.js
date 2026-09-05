@@ -131,7 +131,18 @@ window.__ModuleLoader__.load({
 				repairAllBtn: "一键修复",
 				repairAllDone: "✓ 已修复 {n} · 跳过 {s} · 失败 {f}",
 				skipNeedsTarget: "需选择目标分组",
-				filterPh: "筛选：标题 / 会话 ID / 路径…"
+				filterPh: "筛选：标题 / 会话 ID / 路径…",
+				tasksCaption: "迁移任务",
+				tasksHelp: "批量迁移的持久化记录：完成 / 失败逐项可查。失败项可一键重试——按会话当前位置重新迁移，不会用记录里的旧路径；清除记录不影响已迁移的会话。",
+				taskRetryBtn: "重试失败项",
+				taskRetryDone: "✓ 重试完成：成功 {n} · 失败 {f}",
+				taskForgetBtn: "清除记录",
+				taskForgetConfirm: "清除这条任务记录？（不影响已迁移的会话）",
+				taskForgottenMsg: "✓ 已清除记录",
+				dataSummary: "数据保护：回收站 {r} 项（{rSize}）· 备份 {b} 份（{bSize}）",
+				dataCleanupBtn: "清理 30 天前的数据",
+				dataCleanupConfirm: "将清理 {r} 个回收站条目和 {b} 份备份（删除于 30 天前），释放 {size}。继续？",
+				dataCleanedMsg: "✓ 已清理 {r} 个回收站条目、{b} 份备份，释放 {size}"
 			},
 			en: {
 				confirmTitle: "Move session across workspaces",
@@ -248,7 +259,18 @@ window.__ModuleLoader__.load({
 				repairAllBtn: "Fix all",
 				repairAllDone: "✓ Fixed {n} · skipped {s} · failed {f}",
 				skipNeedsTarget: "needs a target group",
-				filterPh: "Filter: title / session id / path…"
+				filterPh: "Filter: title / session id / path…",
+				tasksCaption: "Move tasks",
+				tasksHelp: "Persistent records of bulk moves: every done / failed item is inspectable. Failed items can be retried in one click — retried from where each session currently lives, never from a stale recorded path; clearing a record never touches moved sessions.",
+				taskRetryBtn: "Retry failed",
+				taskRetryDone: "✓ Retry finished: {n} succeeded · {f} failed",
+				taskForgetBtn: "Clear record",
+				taskForgetConfirm: "Clear this task record? (moved sessions are not touched)",
+				taskForgottenMsg: "✓ Record cleared",
+				dataSummary: "Data protection: recycle bin {r} items ({rSize}) · backups {b} copies ({bSize})",
+				dataCleanupBtn: "Clean data older than 30 days",
+				dataCleanupConfirm: "This will purge {r} recycle entries and {b} backups (older than 30 days), freeing {size}. Continue?",
+				dataCleanedMsg: "✓ Purged {r} recycle entries and {b} backups, freed {size}"
 			}
 		};
 		const lang = (navigator.language || "en").toLowerCase().startsWith("zh") ? "zh" : "en";
@@ -566,6 +588,7 @@ window.__ModuleLoader__.load({
 			const [archived, setArchived] = useState(null);
 			const [trash, setTrash] = useState(null);
 			const [backups, setBackups] = useState(null);
+			const [tasks, setTasks] = useState(null);
 			const [query, setQuery] = useState("");
 
 			const call = async (endpoint, payload) => {
@@ -581,7 +604,7 @@ window.__ModuleLoader__.load({
 			const runScan = async () => {
 				setBusy(true);
 				try {
-					const [s, w, h, a, ar, tr, bp] = await Promise.all([call("mover.scan"), call("mover.workspaces"), call("mover.history"), call("mover.ws.audit"), call("mover.archived"), call("mover.trash.list"), call("mover.backups.list")]);
+					const [s, w, h, a, ar, tr, bp, tk] = await Promise.all([call("mover.scan"), call("mover.workspaces"), call("mover.history"), call("mover.ws.audit"), call("mover.archived"), call("mover.trash.list"), call("mover.backups.list"), call("mover.tasks.list")]);
 					setScan(s);
 					setWorkspaces(w.items ?? []);
 					setHistory(h.items ?? []);
@@ -589,8 +612,9 @@ window.__ModuleLoader__.load({
 					setArchived(ar);
 					setTrash(tr);
 					setBackups(bp);
+					setTasks(tk);
 				} catch (err) {
-					failNote(err);
+					setNote(t("failed", { msg: err?.message ?? err }));
 				} finally {
 					setBusy(false);
 				}
@@ -993,6 +1017,69 @@ window.__ModuleLoader__.load({
 				}
 			};
 
+			// 任务重试：只处理记录里未成功的项（当前位置实时解析，逐项隔离失败）
+			const taskRetry = async (task) => {
+				setBusy(true);
+				setNote("");
+				try {
+					const res = await call("mover.tasks.retry", { taskId: task.id });
+					setNote(t("taskRetryDone", { n: res.fixedCount, f: res.failedCount }));
+					const perWs = new Map();
+					for (const r of res.results ?? []) {
+						if (!r.ok) continue;
+						const item = (task.items ?? []).find((i) => i.sessionId === r.sessionId);
+						const wid = task.targetWorkspaceId;
+						if (wid) perWs.set(wid, [...(perWs.get(wid) ?? []), r.sessionId]);
+					}
+					for (const [wid, ids] of perWs) scheduleRecencyFix(ctx, wid, ids);
+					refreshWorkspaces();
+					await runScan();
+				} catch (err) {
+					failNote(err);
+				} finally {
+					setBusy(false);
+				}
+			};
+
+			const taskForget = async (task) => {
+				if (!window.confirm(t("taskForgetConfirm"))) return;
+				setBusy(true);
+				setNote("");
+				try {
+					await call("mover.tasks.forget", { taskId: task.id });
+					setNote(t("taskForgottenMsg"));
+					await runScan();
+				} catch (err) {
+					failNote(err);
+				} finally {
+					setBusy(false);
+				}
+			};
+
+			// 数据保护：按时间清理回收站与备份（dryRun 先出数字，确认后才真删）
+			const dataCleanup = async () => {
+				setBusy(true);
+				setNote("");
+				try {
+					const preview = await call("mover.data.cleanup", { days: 30, dryRun: true });
+					if (!preview.recyclePurged && !preview.backupDeleted) {
+						setNote(t("dataCleanedMsg", { r: 0, b: 0, size: fmtBytes(0) }));
+						return;
+					}
+					setBusy(false);
+					const size = fmtBytes(preview.freedBytes);
+					if (!window.confirm(t("dataCleanupConfirm", { r: preview.recyclePurged, b: preview.backupDeleted, size }))) return;
+					setBusy(true);
+					const res = await call("mover.data.cleanup", { days: 30 });
+					setNote(t("dataCleanedMsg", { r: res.recyclePurged, b: res.backupDeleted, size: fmtBytes(res.freedBytes) }));
+					await runScan();
+				} catch (err) {
+					failNote(err);
+				} finally {
+					setBusy(false);
+				}
+			};
+
 			const items = scan?.items ?? [];
 			const orphaned = items.filter((it) => it.status === "orphaned");
 			const unregistered = items.filter((it) => it.status === "unregistered");
@@ -1002,6 +1089,7 @@ window.__ModuleLoader__.load({
 			const archivedItems = archived?.items ?? [];
 			const trashItems = trash?.items ?? [];
 			const backupItems = backups?.items ?? [];
+			const taskItems = tasks?.items ?? [];
 			// 面板筛选：标题 / 会话 ID / 路径 / 归属分组，命中任一即保留
 			const q = query.trim().toLowerCase();
 			const matchesQuery = (it) => {
@@ -1014,6 +1102,7 @@ window.__ModuleLoader__.load({
 			const archivedV = archivedItems.filter(matchesQuery);
 			const trashV = trashItems.filter(matchesQuery);
 			const backupV = backupItems.filter(matchesQuery);
+			const taskV = taskItems.filter((it) => matchesQuery({ ...it, title: null, cwd: it.targetPath }));
 			const capCount = (shown, total) => (q ? `${shown}/${total}` : `${total}`);
 			const counts = scan?.counts ?? {};
 			const summaryParts = [
@@ -1128,6 +1217,11 @@ window.__ModuleLoader__.load({
 						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void deleteToTrash(it) }, t("deleteBtn"))
 					))
 				) : null,
+				trashItems.length + backupItems.length > 0 ? h("div", { className: "wsm-scanrow" },
+					h("span", { style: { fontSize: "12.5px", color: "var(--dsw-alias-label-secondary,#666)" } },
+						t("dataSummary", { r: trashItems.length, rSize: fmtBytes(trashItems.reduce((s, it) => s + (it.sizeBytes ?? 0), 0)), b: backupItems.length, bSize: fmtBytes(backupItems.reduce((s, it) => s + (it.totalBytes ?? 0), 0)) })),
+					h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void dataCleanup() }, t("dataCleanupBtn"))
+				) : null,
 				trashItems.length > 0 ? h(Caption, { text: `${t("trashCaption")} (${capCount(trashV.length, trashItems.length)})`, help: t("trashHelp") }) : null,
 				trashItems.length > 1 ? h("div", { className: "wsm-scanrow" },
 					h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void purgeAll(trashItems) }, t("purgeAllBtn"))
@@ -1176,6 +1270,17 @@ window.__ModuleLoader__.load({
 						h("span", { className: "wsm-cwd", title: it.cwd ?? "" }, t("backupMeta", { n: it.count, size: fmtBytes(it.totalBytes), range: fmtRange(it) })),
 						h("button", { className: "wsm-btn small primary", disabled: busy, onClick: () => void backupRestore(it) }, t("restoreBtn")),
 						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void backupDelete(it) }, t("backupDeleteBtn"))
+					))
+				) : null,
+				taskItems.length > 0 ? h(Caption, { text: `${t("tasksCaption")} (${capCount(taskV.length, taskItems.length)})`, help: t("tasksHelp") }) : null,
+				taskV.length > 0 ? h("div", { className: "wsm-list" },
+					taskV.map((it) => h("div", { className: "wsm-item", key: it.id },
+						h("span", { className: "wsm-cwd" }, it.createdAt ? new Date(it.createdAt).toLocaleString() : ""),
+						h("span", { className: "wsm-cwd", title: it.targetPath ?? "" }, `✓${it.done} ✗${it.failed} ⏸${it.skipped} / ${it.total}`),
+						it.failed + it.skipped > 0
+							? h("button", { className: "wsm-btn small primary", disabled: busy, onClick: () => void taskRetry(it) }, t("taskRetryBtn"))
+							: null,
+						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void taskForget(it) }, t("taskForgetBtn"))
 					))
 				) : null,
 				scan && orphaned.length === 0 && unregistered.length === 0 && items.length > 0
