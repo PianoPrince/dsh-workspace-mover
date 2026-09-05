@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { zstdCompressSync, constants } from 'node:zlib';
 
-import { apply, scanFrames, readHeader, artifactPath, openInFileManager, moveDir, stashBackup, verifyRelocatedArtifact } from '../lib/index.js';
+import { apply, scanFrames, readHeader, artifactPath, openInFileManager, moveDir, stashBackup, verifyRelocatedArtifact, deleteSessionToTrash } from '../lib/index.js';
 
 const OPTS = { params: { [constants.ZSTD_c_checksumFlag]: 1 } };
 const DEAD = 'E:\\wsm-dead-path'; // 刻意不存在的路径（孤儿分类用）
@@ -1156,6 +1156,46 @@ test('mover.session.delete：常驻内存的会话拒绝删除', async () => {
   assert.equal(res.ok, false);
   assert.match(res.error.message, /resident in memory/);
   assert.ok(existsSync(artifactPath(root, A, 'session-aaa')), 'file untouched');
+});
+
+test('mover.session.delete：物理移动失败时零副作用（记账/索引/投影/归档原样）', async () => {
+  apply(ctx);
+  sharedIndex.sessionPaths.set('session-aaa', A);
+  entityA.record.sessionIds.push('session-aaa');
+  sharedIndex.headers.set('session-aaa', { id: 'session-aaa', cwd: A, title: 'Alpha discussion' });
+  ctx.workspaceRegistry.archivedSessionIds = ['session-aaa'];
+  stubRegistryState();
+  const table = stubProjection({ identity: { createdAt: 1720000000000, cwd: A }, rows: { title: { ver: 1, seq: 3, val: 'Alpha discussion' } } });
+
+  await assert.rejects(
+    () => deleteSessionToTrash(ctx, { sessionId: 'session-aaa' }, { moveImpl: () => { throw new Error('boom'); } }),
+    /move to recycle failed \(nothing was changed\)/
+  );
+  // 零副作用：五处状态全部原样
+  assert.ok(existsSync(artifactPath(root, A, 'session-aaa')), 'artifact still in place');
+  assert.deepEqual(entityA.record.sessionIds, ['session-aaa'], 'accounting intact');
+  assert.equal(sharedIndex.sessionPaths.get('session-aaa'), A, 'index intact');
+  assert.ok(table.records.has('session-aaa'), 'projection intact');
+  assert.deepEqual(ctx.workspaceRegistry.archivedSessionIds, ['session-aaa'], 'archive set intact');
+  const recycle = join(root, 'workspace-mover', 'recycle');
+  assert.ok(!existsSync(recycle) || readdirSync(recycle).length === 0, 'no recycle entries left');
+});
+
+test('mover.session.delete：manifest 写失败时原样搬回，状态零变化', async () => {
+  apply(ctx);
+  sharedIndex.sessionPaths.set('session-aaa', A);
+  entityA.record.sessionIds.push('session-aaa');
+  const table = stubProjection({ identity: { createdAt: 1720000000000, cwd: A }, rows: { title: { ver: 1, seq: 3, val: 'Alpha discussion' } } });
+
+  await assert.rejects(
+    () => deleteSessionToTrash(ctx, { sessionId: 'session-aaa' }, { writeManifestImpl: () => { throw new Error('disk full'); } }),
+    /manifest write failed, session moved back/
+  );
+  assert.ok(existsSync(artifactPath(root, A, 'session-aaa')), 'artifact moved back');
+  assert.deepEqual(entityA.record.sessionIds, ['session-aaa'], 'accounting untouched');
+  assert.ok(table.records.has('session-aaa'), 'projection untouched');
+  const recycle = join(root, 'workspace-mover', 'recycle');
+  assert.ok(!existsSync(recycle) || readdirSync(recycle).length === 0, 'no invisible recycle entries');
 });
 
 test('mover.session.delete：归档会话删除时同步移出归档集', async () => {
