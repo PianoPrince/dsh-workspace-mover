@@ -7,6 +7,7 @@
 //   carry = max(0, 本次 14 天总数 − 已记录日期中落在窗口内的部分)
 // carry 每次重算而非累加：days[] 为空的运行把"看得见总数但拆不出日期"的部分计入，
 // days[] 恢复后 carry 自然归零，不会重复计数；棘轮保证累计数永不回退。
+// clones 与 uniques 各跑一份同样的账（uniques 为逐日去重数的累加近似值）。
 const REPO = process.env.REPO ?? 'PianoPrince/dsh-workspace-mover';
 const GIST_ID = process.env.GIST_ID ?? 'c14345658550a4a308570acfbaf9d170';
 const TOKEN = process.env.TRAFFIC_TOKEN;
@@ -74,21 +75,26 @@ const inWindow = (date) => {
 	return ms > now - 14 * 86400000 && ms <= now;
 };
 const knownWindow = rows.reduce((sum, row) => sum + (inWindow(row.date) ? row.count : 0), 0);
+const knownWindowUniques = rows.reduce((sum, row) => sum + (inWindow(row.date) ? row.uniques ?? 0 : 0), 0);
 const carry = Math.max(0, clones.body.count - knownWindow);
+const respUniques = typeof clones.body.uniques === 'number' ? clones.body.uniques : 0;
+const carryUniques = Math.max(0, respUniques - knownWindowUniques);
 const sumAll = rows.reduce((sum, row) => sum + row.count, 0);
+const sumAllUniques = rows.reduce((sum, row) => sum + (row.uniques ?? 0), 0);
 
 // 棘轮：只增不减
 const stateFile = 'wsm-traffic-state.json';
-let prevCumulative = 0;
+let prevState = {};
 try {
-	prevCumulative = JSON.parse(gist.body.files[stateFile]?.content ?? '{}').cumulative ?? 0;
-} catch { /* 坏内容当作 0 */ }
-const cumulative = Math.max(prevCumulative, sumAll + carry);
+	prevState = JSON.parse(gist.body.files[stateFile]?.content ?? '{}');
+} catch { /* 坏内容当作空 */ }
+const cumulative = Math.max(prevState.cumulative ?? 0, sumAll + carry);
+const cumulativeUniques = Math.max(prevState.cumulativeUniques ?? 0, sumAllUniques + carryUniques);
 
 const badge = (label, message) => JSON.stringify({ schemaVersion: 1, label, message, color: 'blue' }, null, 0);
 const files = {
-	[stateFile]: { content: JSON.stringify({ cumulative, updatedAt: new Date().toISOString() }) },
-	'wsm-clones-total.json': { content: badge('git clones', `${cumulative} total`) }
+	[stateFile]: { content: JSON.stringify({ cumulative, cumulativeUniques, updatedAt: new Date().toISOString() }) },
+	'wsm-clones-total.json': { content: badge('git clones', `${cumulative} total · ${cumulativeUniques} uniques`) }
 };
 // 空 content 会被 GitHub 当作删除操作而 422：历史文件只在有内容时提交
 if (rows.length > 0) files['wsm-traffic-history.jsonl'] = { content: rows.map((r) => JSON.stringify(r)).join('\n') + '\n' };
@@ -100,4 +106,4 @@ if (patched.status !== 200) {
 	console.error(`gist update failed (HTTP ${patched.status}): ${JSON.stringify(patched.body?.message ?? patched.body)}.`);
 	process.exit(1);
 }
-console.log(`traffic badge updated: 14d=${clones.body.count} (${clones.body.uniques} uniques), days on record=${rows.length}, carry=${carry}, cumulative=${cumulative}`);
+console.log(`traffic badge updated: 14d=${clones.body.count} (${respUniques} uniques), days on record=${rows.length}, carry=${carry}/${carryUniques}, cumulative=${cumulative}/${cumulativeUniques}`);
