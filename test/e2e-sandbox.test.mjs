@@ -994,40 +994,71 @@ test('moveDir：嵌套子目录递归搬运完整', () => {
   assert.equal(readFileSync(join(dst, 'extra', 'sub', 'c.txt'), 'utf8'), 'deep');
 });
 
-test('moveDir：目标残骸清理后走复制兜底，重试幂等', () => {
+test('moveDir：非空目标目录拒绝覆盖，两侧零损伤（不误删外来内容）', () => {
   const src = join(root, 'md-src2');
   const dst = join(root, 'md-dst2');
   mkdirSync(src, { recursive: true });
   writeFileSync(join(src, 'session.jsonl.zstd'), Buffer.from('payload'));
-  // 预置上次失败遗留的半成品目标（含垃圾文件）→ rename 必失败 → 走复制兜底
+  // 预置非空目标目录（外来内容或进程中断残骸）→ 必须拒绝且双方都原样保留
   mkdirSync(dst, { recursive: true });
-  writeFileSync(join(dst, 'stale.bin'), Buffer.from('junk'));
-  assert.equal(moveDir(src, dst), 'copy');
+  writeFileSync(join(dst, 'foreign.bin'), Buffer.from('not-mine'));
+  assert.throws(() => moveDir(src, dst, { renameImpl: () => false }), /not empty/);
+  assert.equal(readFileSync(join(src, 'session.jsonl.zstd'), 'utf8'), 'payload', 'source untouched');
+  assert.equal(readFileSync(join(dst, 'foreign.bin'), 'utf8'), 'not-mine', 'foreign content untouched');
+  // 目标为空目录则允许兜底复制（空目录无数据可损失）
+  rmSync(join(dst, 'foreign.bin'));
+  assert.equal(moveDir(src, dst, { renameImpl: () => false }), 'copy');
   assert.ok(!existsSync(src), 'source removed');
   assert.equal(readFileSync(join(dst, 'session.jsonl.zstd'), 'utf8'), 'payload');
-  assert.ok(!existsSync(join(dst, 'stale.bin')), 'stale leftover removed');
 });
 
-test('moveDir：复制失败清理目标半成品，源完好，重试成功', () => {
+test('moveDir：复制失败只清理本次创建的目标目录，源完好，重试成功', () => {
   const src = join(root, 'md-src3');
   const dst = join(root, 'md-dst3');
   mkdirSync(src, { recursive: true });
   writeFileSync(join(src, 'f.txt'), Buffer.from('data'));
-  // 预置残骸使 rename 失败 → 进入复制路径，注入必抛的 copy 实现
-  mkdirSync(dst, { recursive: true });
-  writeFileSync(join(dst, 'stale.bin'), Buffer.from('junk'));
   let calls = 0;
   assert.throws(
-    () => moveDir(src, dst, () => { calls++; throw new Error('simulated copy failure'); }),
+    () => moveDir(src, dst, { renameImpl: () => false, copyImpl: () => { calls++; throw new Error('simulated copy failure'); } }),
     /simulated copy failure/
   );
   assert.equal(calls, 1);
   assert.ok(existsSync(join(src, 'f.txt')), 'source untouched');
-  assert.ok(!existsSync(dst), 'partial destination removed');
-  // 重试（默认真实复制）成功，磁盘零残留
-  moveDir(src, dst);
+  assert.ok(!existsSync(dst), 'half-built destination removed');
+  // 重试（默认真实复制，rename 兜底路径）成功，磁盘零残留
+  moveDir(src, dst, { renameImpl: () => false });
   assert.equal(readFileSync(join(dst, 'f.txt'), 'utf8'), 'data');
   assert.ok(!existsSync(src));
+});
+
+test('moveDir：rename 抛 EEXIST（撞上已有目标）落入复制兜底', () => {
+  const src = join(root, 'md-src4');
+  const dst = join(root, 'md-dst4');
+  mkdirSync(src, { recursive: true });
+  writeFileSync(join(src, 'f.txt'), Buffer.from('x'));
+  const how = moveDir(src, dst, { renameImpl: () => { const e = new Error('exists'); e.code = 'EEXIST'; throw e; } });
+  assert.equal(how, 'copy');
+  assert.equal(readFileSync(join(dst, 'f.txt'), 'utf8'), 'x');
+  assert.ok(!existsSync(src));
+});
+
+test('迁移流程级：残留目标目录给出明确错误，清理后同一流程重试成功', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  // 预置"进程中断残骸"：目标会话目录非空但无 artifact（moveSession 的 dstArtifact 守卫放行，moveDir 拒绝）
+  const dstArtifact = artifactPath(root, B, 'session-aaa');
+  mkdirSync(dirname(dstArtifact), { recursive: true });
+  writeFileSync(join(dirname(dstArtifact), 'partial.bin'), Buffer.from('leftover'));
+  const res = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(res.ok, false);
+  assert.match(res.error.message, /not empty/);
+  assert.ok(existsSync(artifactPath(root, A, 'session-aaa')), 'source intact after refusal');
+  // 清理残骸（错误信息指引的手动动作）后：同一迁移流程重试成功
+  rmSync(dirname(dstArtifact), { recursive: true, force: true });
+  const res2 = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(res2.ok, true, JSON.stringify(res2));
+  assert.ok(existsSync(artifactPath(root, B, 'session-aaa')));
+  assert.ok(!existsSync(artifactPath(root, A, 'session-aaa')));
 });
 
 test('stashBackup：相邻前缀 id 的备份互不误删（前缀收紧）', () => {
@@ -1041,4 +1072,11 @@ test('stashBackup：相邻前缀 id 的备份互不误删（前缀收紧）', ()
   const files = readdirSync(dir);
   assert.equal(files.filter((f) => f.startsWith(`${b}.`)).length, 1, '相邻前缀 id 的备份不被误删');
   assert.equal(files.filter((f) => f.startsWith(`${a}.`)).length, 20, 'a 恰好保留最近 20 份');
+  // 同毫秒连续 stash：文件名相同被原子覆盖（last-wins），不报错、不破坏裁剪计数
+  stashBackup(a, Buffer.from('same-ms-1'));
+  stashBackup(a, Buffer.from('same-ms-2'));
+  const files2 = readdirSync(dir);
+  assert.equal(files2.filter((f) => f.startsWith(`${a}.`)).length, 20, '同毫秒覆盖不改变保留计数');
+  const newest = files2.filter((f) => f.startsWith(`${a}.`)).sort().at(-1);
+  assert.equal(readFileSync(join(dir, newest)).toString(), 'same-ms-2', '最新内容 last-wins');
 });
