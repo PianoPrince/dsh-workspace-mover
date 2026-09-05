@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { zstdCompressSync, constants } from 'node:zlib';
 
-import { apply, scanFrames, readHeader, artifactPath, openInFileManager } from '../lib/index.js';
+import { apply, scanFrames, readHeader, artifactPath, openInFileManager, moveDir, stashBackup } from '../lib/index.js';
 
 const OPTS = { params: { [constants.ZSTD_c_checksumFlag]: 1 } };
 const DEAD = 'E:\\wsm-dead-path'; // 刻意不存在的路径（孤儿分类用）
@@ -975,4 +975,70 @@ test('mover.openFolder 只允许已注册工作区路径；openInFileManager 按
     assert.deepEqual(calls[0][1], [A]);
     assert.deepEqual(calls[0][2], { detached: true, stdio: 'ignore' });
   }
+});
+
+//#region v0.8.1：moveDir 事务性 + 备份前缀收紧
+
+test('moveDir：嵌套子目录递归搬运完整', () => {
+  const src = join(root, 'md-src');
+  const dst = join(root, 'md-dst');
+  mkdirSync(join(src, 'extra', 'sub'), { recursive: true });
+  writeFileSync(join(src, 'a.zstd'), Buffer.from('top'));
+  writeFileSync(join(src, 'extra', 'b.txt'), Buffer.from('nested'));
+  writeFileSync(join(src, 'extra', 'sub', 'c.txt'), Buffer.from('deep'));
+  const how = moveDir(src, dst);
+  assert.ok(how === 'rename' || how === 'copy');
+  assert.ok(!existsSync(src), 'source removed');
+  assert.equal(readFileSync(join(dst, 'a.zstd'), 'utf8'), 'top');
+  assert.equal(readFileSync(join(dst, 'extra', 'b.txt'), 'utf8'), 'nested');
+  assert.equal(readFileSync(join(dst, 'extra', 'sub', 'c.txt'), 'utf8'), 'deep');
+});
+
+test('moveDir：目标残骸清理后走复制兜底，重试幂等', () => {
+  const src = join(root, 'md-src2');
+  const dst = join(root, 'md-dst2');
+  mkdirSync(src, { recursive: true });
+  writeFileSync(join(src, 'session.jsonl.zstd'), Buffer.from('payload'));
+  // 预置上次失败遗留的半成品目标（含垃圾文件）→ rename 必失败 → 走复制兜底
+  mkdirSync(dst, { recursive: true });
+  writeFileSync(join(dst, 'stale.bin'), Buffer.from('junk'));
+  assert.equal(moveDir(src, dst), 'copy');
+  assert.ok(!existsSync(src), 'source removed');
+  assert.equal(readFileSync(join(dst, 'session.jsonl.zstd'), 'utf8'), 'payload');
+  assert.ok(!existsSync(join(dst, 'stale.bin')), 'stale leftover removed');
+});
+
+test('moveDir：复制失败清理目标半成品，源完好，重试成功', () => {
+  const src = join(root, 'md-src3');
+  const dst = join(root, 'md-dst3');
+  mkdirSync(src, { recursive: true });
+  writeFileSync(join(src, 'f.txt'), Buffer.from('data'));
+  // 预置残骸使 rename 失败 → 进入复制路径，注入必抛的 copy 实现
+  mkdirSync(dst, { recursive: true });
+  writeFileSync(join(dst, 'stale.bin'), Buffer.from('junk'));
+  let calls = 0;
+  assert.throws(
+    () => moveDir(src, dst, () => { calls++; throw new Error('simulated copy failure'); }),
+    /simulated copy failure/
+  );
+  assert.equal(calls, 1);
+  assert.ok(existsSync(join(src, 'f.txt')), 'source untouched');
+  assert.ok(!existsSync(dst), 'partial destination removed');
+  // 重试（默认真实复制）成功，磁盘零残留
+  moveDir(src, dst);
+  assert.equal(readFileSync(join(dst, 'f.txt'), 'utf8'), 'data');
+  assert.ok(!existsSync(src));
+});
+
+test('stashBackup：相邻前缀 id 的备份互不误删（前缀收紧）', () => {
+  const a = 'session-aaa';
+  const b = 'session-aaa-1'; // a 的前缀超集；'-' < '.' 使其排序在 a 的所有备份之前（最旧）
+  const dir = join(root, 'workspace-mover', 'backups');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${b}.500.zstd`), Buffer.from('other'));
+  for (let i = 1000; i < 1021; i++) writeFileSync(join(dir, `${a}.${i}.zstd`), Buffer.from('v' + i)); // 预置 21 份
+  stashBackup(a, Buffer.from('fresh')); // 再入 1 份 → 触发裁剪
+  const files = readdirSync(dir);
+  assert.equal(files.filter((f) => f.startsWith(`${b}.`)).length, 1, '相邻前缀 id 的备份不被误删');
+  assert.equal(files.filter((f) => f.startsWith(`${a}.`)).length, 20, 'a 恰好保留最近 20 份');
 });

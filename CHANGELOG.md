@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.1] - 2026-09-05
+
+### Fixed
+
+- **Directory relocation is now transactional on the copy fallback.** `moveDir` previously copied the session directory file-by-file; a mid-copy failure left a partial destination directory behind, and since neither the move nor the workspace re-point wizard cleans up the target on failure, every subsequent retry was rejected with "destination artifact already exists" until files were deleted by hand — with the half-written files (already carrying the new cwd header) polluting scan results. The destination is now cleared before copying and after any copy failure, a leftover destination (`ENOTEMPTY`/`EEXIST`) falls into the copy path instead of erroring, and copies use recursive `cpSync` so nested directory entries survive relocation.
+- Backup pruning matched files with `startsWith(id)`; tightened to `startsWith(id + '.')` so sessions with prefix-adjacent ids (e.g. `session-x` vs `session-x-1`) can never prune each other's backups.
+- Tests 41 → 45 (recursive relocation, leftover-destination cleanup and retry idempotence, injected copy-failure cleanup, backup prefix isolation).
+
 ## [0.8.0] - 2026-09-05
 
 ### Added

@@ -15,6 +15,8 @@ Run the test suite:
 npm test
 ```
 
+> On Windows, `npm test` from a PowerShell window may be blocked by the npm.ps1 execution policy. Use Git Bash (as the CI does), or run `npm.cmd test` / `node --test test/core.test.mjs test/e2e-sandbox.test.mjs` directly.
+
 Tests live in `test/core.test.mjs` (pure functions) and `test/e2e-sandbox.test.mjs` (end-to-end against a sandboxed fixture), run with the Node built-in test runner.
 
 The project is dependency-free and has no build step. Keep changes focused, preserve existing DSH integration patterns, and add tests for behavior changes.
