@@ -26,6 +26,7 @@
 - [🖼️ Tour](#️-tour)
 - [⌨️ Usage](#️-usage)
 - [🔌 DSH Integration](#-dsh-integration)
+- [🤝 Coexistence with Other Plugins](#-coexistence-with-other-plugins)
 - [🆕 Recent Updates](#-recent-updates)
 - [🔐 Security](#-security) · [⚠️ Known Limitations](#️-known-limitations)
 
@@ -170,7 +171,7 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 
 ## 🔌 DSH Integration
 
-- **Host half** (`lib/index.js`, zero npm deps): mounted via a standard `insert` row in `cordis.patch.yml`; registers a logical channel through `ctx.connection.rpc.handle('/workspace-mover', …)` with endpoints `mover.status / mover.workspaces / mover.move / mover.moveMany / mover.scan / mover.repair / mover.history / mover.undo / mover.ws.audit / mover.repoint`; failure details land in the host log (`MOVE FAILED`).
+- **Host half** (`lib/index.js`, zero npm deps): mounted via a standard `insert` row in `cordis.patch.yml`; registers a logical channel through `ctx.connection.rpc.handle('/workspace-mover', …)` with endpoints `mover.status / mover.workspaces / mover.move / mover.moveMany / mover.scan / mover.repair / mover.history / mover.undo / mover.ws.audit / mover.repoint / mover.archived / mover.unarchive / mover.openFolder`; failure details land in the host log (`MOVE FAILED`).
 - **Move algorithm**:
   1. Running-state check: only sessions mid-turn are rejected (`agents.get(id)?.status === 'running'`, same predicate as the host UI's badge); sessions resident in memory but idle may be moved;
   2. Reads the authoritative session header from disk and verifies target ≠ source;
@@ -183,6 +184,27 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 - **Client half** (`client/client.js`, build-free source-as-product): locates rows purely by ARIA semantic attributes (session rows `[aria-selected]`, workspace title rows `[aria-expanded]`) and never touches CSS-module hash class names; it intercepts only cross-group drops, leaving official same-group sorting untouched. After a successful move it re-fetches the workspace baseline once via public API so the sidebar settles immediately.
 - **Rescue panel**: registers a settings-page column through the official `settings.section` slot, using RPC endpoints `mover.scan` (classified scan) and `mover.repair` (batched attach/relink, where relink reuses the same move pipeline).
 - **Move history**: stored at `$DSH_HOME/workspace-mover/history.json`, capped at the last 100 entries; undo goes straight back while the original workspace still exists, otherwise you are asked to choose a new target group explicitly.
+
+## 🤝 Coexistence with Other Plugins
+
+**Built to coexist with the ecosystem by design**; the conflict surface is small:
+
+- **Fully namespaced communication**: the RPC occupies a single `/workspace-mover` channel and registers no HTTP routes; the panel lives in the official `settings.section` slot (the slot system supports multiple plugins by design); CSS classes `wsm-*` and DOM attributes `data-wsm-*` are all privately namespaced;
+- **Not a single byte of the official bundles is patched** — only event listeners and slot injections (unlike the few plugins that patch official bundles, which are the real hazard class);
+- **All host writes go through official channels** (registry `mutate` / `attachSession` / `detachSession`, durable domain state) with no private data shapes — other plugins always read official-shaped data;
+- **Zero npm dependencies**, so no shared-dependency version conflicts.
+
+Compatibility when installed alongside other plugin categories:
+
+| Plugin category | Compatibility | Notes |
+| --- | --- | --- |
+| Sidebar enhancements / better-sidebar / terminals / cost meters / memory / export & share | ✅ No conflict | Entirely different panels and data surfaces |
+| Archive managers | ✅ Compatible | Both read and write the official archive set; data stays consistent (panel features may overlap) |
+| Sort / pin plugins | ⚠️ Mostly compatible | This plugin re-sorts "Recently updated" precisely after moves; pin/sort plugins maintain their own collections — coexistence is fine, only their panels may show a slightly different order |
+| Plugins that redraw the sidebar (custom workspace trees) | ⚠️ Graceful degradation | If another plugin replaces the official workspace DOM, the ARIA-semantic selectors may not find rows — features silently stop triggering, but **no data is ever damaged** |
+| Other session movers | ❌ Pick one | Same-category plugins also intercept drag drops at the document level; installing both can double-handle a single drag. This plugin already covers move / bulk / merge / homing / archive restore — no need to install two |
+
+**DSH version sensitivities** (not plugin conflicts): unarchive writes through the registry's durable state channel and reports clearly on hosts that lack it rather than erroring; projection-cache titles are parsed defensively against the v3 shape and fall back to the on-disk header if the file is missing.
 
 ## 🆕 Recent Updates
 

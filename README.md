@@ -36,6 +36,7 @@
 - [🖼️ 特性巡礼](#️-特性巡礼)
 - [⌨️ 使用](#️-使用)
 - [🔌 与 DSH 的集成方式](#-与-dsh-的集成方式)
+- [🤝 与其他插件的共存](#-与其他插件的共存)
 - [🆕 最近更新](#-最近更新)
 - [🔐 安全设计](#-安全设计) · [⚠️ 已知限制](#️-已知限制)
 
@@ -181,7 +182,7 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 
 ## 🔌 与 DSH 的集成方式
 
-- **Host 半**（`lib/index.js`，零 npm 依赖）：经 `cordis.patch.yml` 以标准 `insert` 行挂载；通过 `ctx.connection.rpc.handle('/workspace-mover', …)` 注册逻辑通道，端点 `mover.status / mover.workspaces / mover.move / mover.moveMany / mover.scan / mover.repair / mover.history / mover.undo / mover.ws.audit / mover.repoint`，失败详情写入宿主日志（`MOVE FAILED`）。
+- **Host 半**（`lib/index.js`，零 npm 依赖）：经 `cordis.patch.yml` 以标准 `insert` 行挂载；通过 `ctx.connection.rpc.handle('/workspace-mover', …)` 注册逻辑通道，端点 `mover.status / mover.workspaces / mover.move / mover.moveMany / mover.scan / mover.repair / mover.history / mover.undo / mover.ws.audit / mover.repoint / mover.archived / mover.unarchive / mover.openFolder`，失败详情写入宿主日志（`MOVE FAILED`）。
 - **移动算法**：
   1. 运行状态检查：仅拒绝回合进行中的会话（`agents.get(id)?.status === 'running'`，与宿主 UI"进行中"徽标同款判据）；常驻内存但空闲的会话允许迁移；
   2. 从磁盘读取权威会话头，校验目标 ≠ 源；
@@ -194,6 +195,27 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 - **Client 半**（`client/client.js`，免构建 source-as-product）：仅依赖 ARIA 语义属性定位行元素（会话行 `[aria-selected]` / 工作区标题行 `[aria-expanded]`），不碰 CSS-module 哈希类名；只拦截「跨组投放」场景，官方同组排序不受影响。迁移成功后主动重拉一次工作区基线（公开 API），侧边栏分组即时归位。
 - **救援面板**：经官方 `settings.section` 插槽注册设置页分栏，RPC 端点 `mover.scan`（分类扫描）与 `mover.repair`（批量 attach/relink，relink 复用同一条迁移管线）。
 - **迁移历史**：保存于 `$DSH_HOME/workspace-mover/history.json`，最多保留最近 100 条；原工作区仍存在时可直接撤回，原工作区已删除时会明确要求重新选择目标分组。
+
+## 🤝 与其他插件的共存
+
+**设计上就按"与生态共生"标准实现**，与其他插件冲突面很小：
+
+- **通信全命名空间**：RPC 只占 `/workspace-mover` 一个通道、不注册任何 HTTP 路由；面板走官方 `settings.section` 插槽（槽位系统天生支持多插件并存）；CSS 类 `wsm-*` 与 DOM 属性 `data-wsm-*` 均为自有命名空间；
+- **不改写官方 bundle 任何字节**，只挂事件监听与槽位注入（对比少数直接 patch 官方 bundle 的插件，不存在那类雷）；
+- **宿主写入全走官方通道**（registry 的 `mutate`/`attachSession`/`detachSession`、持久域状态），不引入私有数据形态，其他插件读到的永远是官方形态的数据；
+- **零 npm 依赖**，不存在共享依赖的版本冲突。
+
+与其他类目插件同装的兼容性：
+
+| 同装插件类目 | 兼容性 | 说明 |
+| --- | --- | --- |
+| 侧边栏增强 / better-sidebar / 终端 / 费用统计 / 记忆 / 导出分享 | ✅ 无冲突 | 面板与数据面完全不同 |
+| 归档管理类插件 | ✅ 兼容 | 双方都读写官方归档集，数据层一致（面板功能会有些重复） |
+| 排序 / 置顶类插件 | ⚠️ 基本兼容 | 本插件移动后精确重排「最近更新」，置顶/排序插件各自维护自己的集合——并存无碍，仅各自面板展示顺序可能不完全一致 |
+| 重画侧边栏的插件（自绘工作区树） | ⚠️ 降级共存 | 若对方替换官方工作区 DOM，本插件的 ARIA 语义选择器可能找不到行——表现为功能静默不触发，**不会损坏数据** |
+| 其他会话移动器 | ❌ 建议二选一 | 同类插件同样在 document 层拦截拖拽投放，同时安装可能导致一次拖拽被双重处理。本插件已覆盖移动 / 批量 / 合并 / 归位 / 归档恢复场景，无需重复安装 |
+
+**DSH 版本敏感点**（非插件冲突）：取消归档走 registry 持久状态写通道，在不支持的宿主版本上会明确提示而非报错；投影缓存标题按 v3 形状防御性解析，文件缺失时退化为档案头标题。
 
 ## 🆕 最近更新
 
