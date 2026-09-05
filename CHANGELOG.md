@@ -1,4 +1,7 @@
-undefined
+# Changelog
+
+All notable changes to this project are documented here.
+
 ## [1.0.0] - 2026-09-05
 
 ### Added
@@ -122,3 +125,26 @@ undefined
 ## [0.3.2]
 
 - Added session scanning, orphan repair, unregistered-session attachment, and rollback protection.
+
+## [1.3.0] - 2026-09-05
+
+### Added
+
+- **Data protection summary and time-based cleanup**: one combined line over the recycle bin and backups (item counts and footprint), plus a clean-older-than-30-days action — dry-run first (shows exactly how many entries and how much space would be freed), explicit confirmation, then per-item cleanup with the freed-space report. Corrupt or stale entries never block the rest.
+- New RPC endpoint: `mover.data.cleanup` (with `dryRun`).
+- Tests 69 → 70.
+
+## [1.2.0] - 2026-09-05
+
+### Added
+
+- **Migration task center (record-style)**: every bulk move is persisted as a task — per-session state (done / failed with last error and last attempt time), source and target paths. Failed items retry in one click; each retry resolves the session's CURRENT location (never the stale recorded path), stays individually isolated, and an "already at target" failure converges to done (idempotent). Retried moves land in the move history like normal batches, so undo still works. Records are clearable without touching moved sessions.
+- New RPC endpoints: `mover.tasks.list / retry / forget`. `mover.moveMany` results now include a `taskId`.
+- Tests 66 → 69.
+
+## [1.1.0] - 2026-09-05
+
+### Added
+
+- **Preflight completion**: moveSession preflights before touching anything — double-accounting detection (extra owners detached during the move instead of lingering as ghosts), target writability probe, advisory disk-space check. The move detaches ALL owners and the post-move single-owner pass detaches any stale remainder; rollbacks re-attach every prior owner. Results carry a `warnings` array.
+- Tests 64 → 66.
