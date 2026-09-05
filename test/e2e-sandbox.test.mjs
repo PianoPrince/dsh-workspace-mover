@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { zstdCompressSync, constants } from 'node:zlib';
 
-import { apply, scanFrames, readHeader, artifactPath } from '../lib/index.js';
+import { apply, scanFrames, readHeader, artifactPath, openInFileManager } from '../lib/index.js';
 
 const OPTS = { params: { [constants.ZSTD_c_checksumFlag]: 1 } };
 const DEAD = 'E:\\wsm-dead-path'; // 刻意不存在的路径（孤儿分类用）
@@ -828,4 +828,138 @@ test('宿主缺少 fileReferences/sessionProjectionCache 服务时热修静默�
   const res = await call('mover.repoint', { workspaceId: 'wid-a', newPath: A + '-moved' });
   assert.equal(res.ok, true, JSON.stringify(res));
   assert.equal(res.value.movedCount, 1);
+});
+
+//#region v0.8：空分组原始记账 / 归档管理 / 打开文件夹
+
+/** 模拟官方 registry 的持久状态写通道（archiveSession 同款 enqueueOperation + setState）。 */
+function stubRegistryState() {
+  const registry = ctx.workspaceRegistry;
+  registry.requireState = () => ({
+    initialized: true,
+    workspaceIds: [...registry.entities.keys()],
+    archivedSessionIds: registry.archivedSessionIds
+  });
+  registry.setState = async (next) => { registry.archivedSessionIds = next.archivedSessionIds; };
+  registry.enqueueOperation = (fn) => fn();
+}
+
+test('mover.workspaces 暴露原始记账数：归档与幽灵成员都算数（空分组判定的依据）', async () => {
+  apply(ctx);
+  sharedIndex.sessionPaths.set('session-aaa', A);
+  entityA.record.sessionIds.push('session-aaa');
+  // B 记账了两个幽灵 id（磁盘无档案）+ 一个归档 id
+  entityB.record.sessionIds.push('ghost-1', 'ghost-2', 'archived-1');
+  ctx.workspaceRegistry.archivedSessionIds = ['archived-1'];
+
+  const res = await call('mover.workspaces');
+  assert.equal(res.ok, true);
+  const a = res.value.items.find((it) => it.workspaceId === 'wid-a');
+  const b = res.value.items.find((it) => it.workspaceId === 'wid-b');
+  assert.equal(a.rawSessionCount, 1);
+  assert.equal(b.rawSessionCount, 3);
+  // 公开 getter 会按索引过滤幽灵 id —— 这正是要用原始记账判定空分组的原因
+  assert.deepEqual(b.sessionIds, []);
+});
+
+test('mover.archived 列出归档会话：归属取自原始记账，cwd 挂错时给出归位建议', async () => {
+  apply(ctx);
+  sharedIndex.sessionPaths.set('session-aaa', A);
+  entityA.record.sessionIds.push('session-aaa');
+  // session-bbb：文件在 B、记账在 A（挂错）→ 归档后建议归位到 B
+  const bArtifact = artifactPath(root, B, 'session-bbb');
+  mkdirSync(dirname(bArtifact), { recursive: true });
+  writeFileSync(bArtifact, makeArtifact({ type: 'session', id: 'session-bbb', cwd: B, title: 'Beta talk' }));
+  sharedIndex.sessionPaths.set('session-bbb', B);
+  entityA.record.sessionIds.push('session-bbb');
+  ctx.workspaceRegistry.archivedSessionIds = ['session-aaa', 'session-bbb'];
+
+  const res = await call('mover.archived');
+  assert.equal(res.ok, true, JSON.stringify(res));
+  const items = res.value.items;
+  assert.equal(items.length, 2);
+  const aaa = items.find((it) => it.sessionId === 'session-aaa');
+  assert.equal(aaa.title, 'Alpha discussion');
+  assert.equal(aaa.ownerWorkspaceId, 'wid-a');
+  assert.equal(aaa.suggestedWorkspaceId, null);
+  const bbb = items.find((it) => it.sessionId === 'session-bbb');
+  assert.equal(bbb.ownerWorkspaceId, 'wid-a');
+  assert.equal(bbb.suggestedWorkspaceId, 'wid-b');
+  assert.equal(bbb.suggestedTitle, 'wid-b');
+});
+
+test('mover.unarchive 取消归档：归档集移除、账本不动、无迁移', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  ctx.workspaceRegistry.archivedSessionIds = ['session-aaa', 'session-other'];
+  stubRegistryState();
+
+  const res = await call('mover.unarchive', { sessionId: 'session-aaa' });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.unarchived, true);
+  assert.equal(res.value.moved, null);
+  assert.deepEqual(ctx.workspaceRegistry.archivedSessionIds, ['session-other']);
+  assert.deepEqual(entityA.record.sessionIds, ['session-aaa']);
+  assert.equal(entityA.attached.length, 0);
+});
+
+test('mover.unarchive 带目标且 ≠ 归属：先出归档集再走完整迁移（备份 + 可撤销）', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  ctx.workspaceRegistry.archivedSessionIds = ['session-aaa'];
+  stubRegistryState();
+
+  const res = await call('mover.unarchive', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.moved.moved, true);
+  assert.deepEqual(ctx.workspaceRegistry.archivedSessionIds, []);
+  assert.ok(existsSync(artifactPath(root, B, 'session-aaa')), 'artifact moved to B');
+  assert.ok(!existsSync(artifactPath(root, A, 'session-aaa')), 'source artifact gone');
+  assert.ok(existsSync(join(root, 'workspace-mover', 'backups')), 'backup created');
+
+  const listed = await call('mover.history');
+  assert.equal(listed.value.items.length, 1);
+  const undone = await call('mover.undo', { historyId: listed.value.items[0].id });
+  assert.equal(undone.ok, true);
+  assert.ok(existsSync(artifactPath(root, A, 'session-aaa')));
+});
+
+test('mover.unarchive 拒绝：未归档的会话；registry 缺状态写通道', async () => {
+  apply(ctx);
+  const miss = await call('mover.unarchive', { sessionId: 'session-aaa' });
+  assert.equal(miss.ok, false);
+  assert.match(miss.error.message, /not archived/);
+
+  // 归档集里有它，但 registry 没有官方写通道（老版本宿主容错）
+  ctx.workspaceRegistry.archivedSessionIds = ['session-aaa'];
+  const res = await call('mover.unarchive', { sessionId: 'session-aaa' });
+  assert.equal(res.ok, false);
+  assert.match(res.error.message, /no state mutation API/);
+});
+
+test('mover.openFolder 只允许已注册工作区路径；openInFileManager 按平台拼装命令', async () => {
+  apply(ctx);
+  // 未注册路径拒绝（不触发任何 spawn）
+  const stranger = join(root, 'stranger');
+  mkdirSync(stranger, { recursive: true });
+  const bad = await call('mover.openFolder', { path: stranger });
+  assert.equal(bad.ok, false);
+  assert.match(bad.error.message, /does not belong/);
+
+  // 注册了但目录已消失同样拒绝
+  const ghost = makeEntity('wid-ghost', join(root, 'ghost-dir'), { ...sharedIndex, sessionPath: (id) => sharedIndex.sessionPaths.get(String(id)) });
+  ctx.workspaceRegistry.entities.set('wid-ghost', ghost);
+  const missing = await call('mover.openFolder', { workspaceId: 'wid-ghost' });
+  assert.equal(missing.ok, false);
+  assert.match(missing.error.message, /does not exist/);
+
+  // 平台命令拼装（spawn 注入 fake，不真开窗口）
+  const calls = [];
+  const fakeChild = { unref() {} };
+  const cmd = openInFileManager(A, (command, args, opts) => { calls.push([command, args, opts]); return fakeChild; });
+  const expected = process.platform === 'win32' ? 'explorer.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open';
+  assert.equal(cmd, expected);
+  assert.deepEqual(calls[0][0], expected);
+  assert.deepEqual(calls[0][1], [A]);
+  assert.deepEqual(calls[0][2], { detached: true, stdio: 'ignore' });
 });

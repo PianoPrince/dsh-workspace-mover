@@ -43,9 +43,12 @@ DeepSeek Harness's sidebar supports drag-to-reorder within a workspace, but drop
   - **Orphaned**: sessions whose cwd broke after their project folder was moved/renamed/deleted, so they "disappeared" from the sidebar (community fix for discussion #3012); one click moves them for real into any existing workspace
   - **Unregistered**: sessions with a valid cwd that were never registered by any workspace (bootstrap runs once, agent-internal forks don't register); attach them in place
   - **Misfiled**: sessions whose real folder belongs to group B but that are recorded under group A (clone-style movers, groups recreated after a folder rename); the matching group is identified automatically — home them one by one or all at once, bookkeeping only, files untouched
+  - **Archived sessions**: sessions hidden by the official archive action with no way back from the UI are listed under their owning group; restore to the original group in one click or into another group, and misfiled ones carry a homing suggestion
   - **Ghosts**: ids present in the registry whose archives are missing on disk (read-only notice)
   - All go through the same backup + rollback pipeline
 - **🧹 Group merge**: move a whole group into a target via the header's "…" menu, then delete the emptied source group right away — a merge in two commands
+- **🗂️ Empty group cleanup**: the rescue panel lists only truly zero-member workspaces (archived sessions and ghost roster entries count as members, so this never misreports); delete one or all — only the registration is removed, no session is touched
+- **📂 Open folder**: a one-click entry in the header's "…" menu opens the group's directory in the system file manager
 - **⏪ Move history & undo**: Keeps the last 100 cross-workspace moves; bulk moves aggregate into one entry with whole-set undo, and undo generates its own backup with rollback protection
 - **🏷️ Session titles first**: Confirmation dialogs, rescue lists, and recent moves show session titles when available, falling back to "Untitled session"
 
@@ -182,6 +185,12 @@ Running sessions are rejected (host-side validation), and failed moves roll back
 - **Move history**: stored at `$DSH_HOME/workspace-mover/history.json`, capped at the last 100 entries; undo goes straight back while the original workspace still exists, otherwise you are asked to choose a new target group explicitly.
 
 ## 🆕 Recent Updates
+
+### v0.8.0 · 2026-09-05
+
+- Archived session management: the rescue panel gains an "Archived sessions" block — sessions hidden by the official archive action are listed under their owning group, restored to the original group in one click, or moved to another group via "Restore to…" with full move protection; misfiled archived sessions carry a homing suggestion
+- Empty group detection and cleanup: only truly zero-member workspaces are listed (archived sessions and ghost roster entries count as members, so this never misreports); delete one or all
+- The workspace "…" menu gains "Open folder": jump to the group's directory in the system file manager
 
 ### v0.7.0 · 2026-08-28
 

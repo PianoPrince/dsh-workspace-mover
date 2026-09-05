@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.0] - 2026-09-05
+
+### Added
+
+- **Archived session management**: the rescue panel gains an "Archived sessions" block. Sessions hidden by the official archive action — previously unreachable from any UI — are listed under their owning group (the archive set never touches workspace accounting, so ownership survives). One click restores a session to its original group, or "Restore to…" moves it into another group through the same protected move pipeline (backup, history, undo). Sessions whose real folder matches a different workspace carry a homing suggestion, so restoring and re-homing is one decision.
+- **Empty group detection and cleanup**: the rescue panel lists workspaces with zero members — counted against the raw registry ledger (`record.sessionIds`), so archived and ghost roster entries always count as members and never misreport. Single delete or delete-all; each delete re-checks the raw ledger right before acting, and goes through the official workspace delete API (registration only, no session files touched).
+- **"Open folder" in the workspace "…" menu**: opens the group's directory in the system file manager (explorer.exe / open / xdg-open). The RPC only accepts paths belonging to registered workspaces, and refuses missing directories.
+- `mover.archived`, `mover.unarchive`, `mover.openFolder` RPC endpoints; `mover.workspaces` items now carry `rawSessionCount` (raw ledger length, including archived/ghost members, alongside the index-filtered `sessionIds`). Unarchive writes through the registry's durable state channel — the same `enqueueOperation` + `setState` path the official `archiveSession` uses — so changes survive restarts; hosts without that channel fail with a clear "unsupported on this DSH version" error.
+- Tests 35 → 41 cases (archived listing + homing suggestion, unarchive with/without a target including undo round-trip, raw ledger counting, open-folder path validation and per-platform command assembly).
+
+### Fixed
+
+- The group-merge "deleted empty group" toast never fired: the official `workspaces.delete()` resolves with no value on success (it rejects on failure), so checking `result.ok` mislabeled every successful delete as a failure. The new empty-group cleanup uses the same corrected semantics.
+
 ## [0.7.0] - 2026-08-28
 
 ### Added

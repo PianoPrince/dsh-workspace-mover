@@ -94,7 +94,23 @@ window.__ModuleLoader__.load({
 				pickEscHint: "按 Esc 清空多选（输入框聚焦时无效）",
 				groupMoveTitle: "把「{title}」的会话移到…",
 				groupMoveHint: "整组会话将真迁移到目标分组；运行中的会话会被跳过并在结果中说明。",
-				groupMoveEmpty: "这个分组下没有可移动的会话。"
+				groupMoveEmpty: "这个分组下没有可移动的会话。",
+				openFolderMenu: "打开文件夹",
+				archivedCaption: "已归档的会话",
+				archivedHelp: "这些会话被官方「归档」后从侧边栏消失，但文件和分组归属都还在。点「恢复」回到原来的分组，或选「恢复到…」换一个分组；恢复不会动文件。",
+				restoreBtn: "恢复",
+				restoreToBtn: "恢复到…",
+				restorePickTitle: "把「{title}」恢复到…",
+				restoreDone: "✓ 已恢复到「{ws}」",
+				ownerGoneBadge: "原分组已删除",
+				emptyWsCaption: "空分组",
+				emptyWsHelp: "这些分组名下一个会话都没有（归档的、名单里的幽灵记录都算成员，绝不会误报）。删除只移除分组登记，不影响任何会话。",
+				emptyWsDelete: "删除",
+				emptyWsDeleteAll: "全部删除",
+				emptyWsConfirmOne: "删除空分组「{title}」？\n\n{path}\n\n只移除分组登记，不影响任何会话。",
+				emptyWsConfirmAll: "删除全部 {n} 个空分组？\n\n只移除分组登记，不影响任何会话。",
+				emptyWsDone: "✓ 已删除 {n} 个空分组",
+				emptyWsStale: "「{title}」刚刚有了新成员，已跳过"
 			},
 			en: {
 				confirmTitle: "Move session across workspaces",
@@ -174,7 +190,23 @@ window.__ModuleLoader__.load({
 				pickEscHint: "Press Esc to clear the multi-selection (not while typing in the composer)",
 				groupMoveTitle: "Move sessions of \"{title}\" to…",
 				groupMoveHint: "The whole group will be truly moved to the target; running sessions are skipped and noted in the result.",
-				groupMoveEmpty: "No movable sessions in this group."
+				groupMoveEmpty: "No movable sessions in this group.",
+				openFolderMenu: "Open folder",
+				archivedCaption: "Archived sessions",
+				archivedHelp: "These sessions were hidden by the official \"archive\" action, but their files and group membership are intact. \"Restore\" sends them back to the original group, or \"Restore to…\" picks another one; restoring never touches files.",
+				restoreBtn: "Restore",
+				restoreToBtn: "Restore to…",
+				restorePickTitle: "Restore \"{title}\" to…",
+				restoreDone: "✓ Restored to \"{ws}\"",
+				ownerGoneBadge: "Original group deleted",
+				emptyWsCaption: "Empty groups",
+				emptyWsHelp: "These groups hold no sessions at all (archived ones and ghost roster entries count as members, so this never misreports). Deleting only removes the group registration; no session is touched.",
+				emptyWsDelete: "Delete",
+				emptyWsDeleteAll: "Delete all",
+				emptyWsConfirmOne: "Delete empty group \"{title}\"?\n\n{path}\n\nOnly the group registration is removed; no session is touched.",
+				emptyWsConfirmAll: "Delete all {n} empty groups?\n\nOnly the group registration is removed; no session is touched.",
+				emptyWsDone: "✓ Deleted {n} empty group(s)",
+				emptyWsStale: "\"{title}\" gained members just now; skipped"
 			}
 		};
 		const lang = (navigator.language || "en").toLowerCase().startsWith("zh") ? "zh" : "en";
@@ -411,6 +443,42 @@ window.__ModuleLoader__.load({
 				});
 			}
 
+			/** 归档恢复目标选择对话框：列出全部分组（默认选中归位建议）。resolve(workspaceId) 或 resolve(null)。 */
+			function pickRestoreTarget({ item, workspaces, suggestId }) {
+				return new Promise((resolve) => {
+					const overlay = injectOverlay();
+					overlay.querySelector(".wsm-title").textContent = t("restorePickTitle", { title: item.title || t("unnamedSession") });
+					overlay.querySelector(".wsm-session").textContent = item.ownerTitle ?? t("ownerGoneBadge");
+					overlay.querySelector(".wsm-hint").textContent = item.cwd ?? "";
+					const targetRow = overlay.querySelectorAll(".wsm-row")[1];
+					targetRow.querySelector(".wsm-target").replaceWith((() => {
+						const select = document.createElement("select");
+						select.className = "wsm-select";
+						select.style.maxWidth = "260px";
+						select.append(new Option(t("allWorkspaces"), ""));
+						for (const w of workspaces) {
+							select.append(new Option(`${w.title}（${w.path}）`, w.workspaceId));
+						}
+						if (suggestId) select.value = suggestId;
+						return select;
+					})());
+					const okBtn = overlay.querySelector(".wsm-ok");
+					okBtn.textContent = t("restoreBtn");
+					okBtn.disabled = true;
+					const select = overlay.querySelector("select.wsm-select");
+					select.addEventListener("change", () => { okBtn.disabled = !select.value; });
+					const close = (value) => { overlay.remove(); document.removeEventListener("keydown", onKey); resolve(value); };
+					const onKey = (e) => { if (e.key === "Escape") close(null); };
+					document.addEventListener("keydown", onKey);
+					overlay.addEventListener("click", (e) => { if (e.target === overlay) close(null); });
+					overlay.querySelector(".wsm-cancel").addEventListener("click", () => close(null));
+					okBtn.addEventListener("click", () => close(select.value || null));
+					document.body.appendChild(overlay);
+					if (select.value) okBtn.disabled = false;
+					select.focus();
+				});
+			}
+
 		//#region v0.3 设置页「会话修复」面板
 		const { useState, useEffect } = React;
 		const h = (tag, props, ...children) => React.createElement(tag, props ?? null, ...children);
@@ -440,6 +508,7 @@ window.__ModuleLoader__.load({
 			const [picked, setPicked] = useState({});
 			const [note, setNote] = useState("");
 			const [history, setHistory] = useState([]);
+			const [archived, setArchived] = useState(null);
 
 			const call = async (endpoint, payload) => {
 				const res = await rpcCall(endpoint, payload ?? {});
@@ -454,11 +523,12 @@ window.__ModuleLoader__.load({
 			const runScan = async () => {
 				setBusy(true);
 				try {
-					const [s, w, h, a] = await Promise.all([call("mover.scan"), call("mover.workspaces"), call("mover.history"), call("mover.ws.audit")]);
+					const [s, w, h, a, ar] = await Promise.all([call("mover.scan"), call("mover.workspaces"), call("mover.history"), call("mover.ws.audit"), call("mover.archived")]);
 					setScan(s);
 					setWorkspaces(w.items ?? []);
 					setHistory(h.items ?? []);
 					setAudit(a);
+					setArchived(ar);
 				} catch (err) {
 					setNote(t("failed", { msg: err?.message ?? err }));
 				} finally {
@@ -604,11 +674,88 @@ window.__ModuleLoader__.load({
 				}
 			};
 
+			// 归档恢复：从 registry 全局归档集移除（记账槽未动，自动回原分组原位置）；
+			// 带 targetWorkspaceId 且 ≠ 归属时，宿主顺路走常规迁移（备份/撤销全套保护）。
+			const restoreOne = async (item, targetWorkspaceId) => {
+				setBusy(true);
+				setNote("");
+				try {
+					await call("mover.unarchive", { sessionId: item.sessionId, targetWorkspaceId: targetWorkspaceId || undefined });
+					const wid = targetWorkspaceId || item.ownerWorkspaceId;
+					const wsTitle = workspaces.find((w) => w.workspaceId === wid)?.title ?? "";
+					setNote(t("restoreDone", { ws: wsTitle || "?" }));
+					if (wid) scheduleRecencyFix(ctx, wid, [item.sessionId]);
+					refreshWorkspaces();
+					await runScan();
+				} catch (err) {
+					setNote(t("failed", { msg: err?.message ?? err }));
+				} finally {
+					setBusy(false);
+				}
+			};
+
+			const restoreTo = async (item) => {
+				const targetId = await pickRestoreTarget({ item, workspaces, suggestId: item.suggestedWorkspaceId });
+				if (!targetId) return;
+				await restoreOne(item, targetId);
+			};
+
+			// 空分组删除：动手前重拉一次原始记账，仍为空才删（防扫描与点击之间刚建了会话）。
+			// 官方 workspaces.delete() 成功即 resolve（void）、失败 reject，没有 {ok} 信封。
+			const deleteEmptyOne = async (ws) => {
+				if (!window.confirm(t("emptyWsConfirmOne", { title: ws.title, path: ws.path }))) return;
+				setBusy(true);
+				setNote("");
+				try {
+					const fresh = await call("mover.workspaces");
+					const current = (fresh.items ?? []).find((it) => it.workspaceId === ws.workspaceId);
+					if (!current || (current.rawSessionCount ?? 0) !== 0) {
+						setNote(t("emptyWsStale", { title: ws.title }));
+						return;
+					}
+					await ctx?.get?.("workspaces")?.delete?.(ws.workspaceId);
+					setNote(t("emptyWsDone", { n: 1 }));
+					refreshWorkspaces();
+					await runScan();
+				} catch (err) {
+					setNote(t("failed", { msg: err?.message ?? err }));
+				} finally {
+					setBusy(false);
+				}
+			};
+
+			const deleteEmptyAll = async (list) => {
+				if (!window.confirm(t("emptyWsConfirmAll", { n: list.length }))) return;
+				setBusy(true);
+				setNote("");
+				try {
+					const fresh = await call("mover.workspaces");
+					let n = 0;
+					for (const ws of list) {
+						const current = (fresh.items ?? []).find((it) => it.workspaceId === ws.workspaceId);
+						if (!current || (current.rawSessionCount ?? 0) !== 0) continue;
+						try {
+							await ctx?.get?.("workspaces")?.delete?.(ws.workspaceId);
+							n++;
+						} catch { /* 单个失败不影响其余 */ }
+					}
+					setNote(n > 0 ? t("emptyWsDone", { n }) : t("emptyWsStale", { title: list[0]?.title ?? "?" }));
+					refreshWorkspaces();
+					await runScan();
+				} catch (err) {
+					setNote(t("failed", { msg: err?.message ?? err }));
+				} finally {
+					setBusy(false);
+				}
+			};
+
 			const items = scan?.items ?? [];
 			const orphaned = items.filter((it) => it.status === "orphaned");
 			const unregistered = items.filter((it) => it.status === "unregistered");
 			const misfiled = items.filter((it) => it.status === "misfiled");
 			const brokenWorkspaces = (audit?.items ?? []).filter((it) => it.status !== "ok");
+			const emptyWorkspaces = workspaces.filter((w) => (w.rawSessionCount ?? 0) === 0);
+			const archivedItems = archived?.items ?? [];
 			const counts = scan?.counts ?? {};
 			const summaryParts = [
 				["orphaned", t("stalePath")],
@@ -685,6 +832,34 @@ window.__ModuleLoader__.load({
 							h("button", { className: "wsm-btn small primary", disabled: busy, onClick: () => void homeOne(it) }, t("homeBtn"))
 						);
 					})
+				) : null,
+				archivedItems.length > 0 ? h(Caption, { text: `${t("archivedCaption")} (${archivedItems.length})`, help: t("archivedHelp") }) : null,
+				archivedItems.length > 0 ? h("div", { className: "wsm-list" },
+					archivedItems.map((it) => h("div", { className: "wsm-item", key: it.sessionId },
+						h("span", { className: "wsm-mono" }, it.title || t("unnamedSession")),
+						it.suggestedWorkspaceId ? h("span", { className: "wsm-badge" }, t("misfiledLabel")) : null,
+						h("span", { className: "wsm-cwd", title: it.cwd ?? "" },
+							it.ownerTitle ? it.ownerTitle : t("ownerGoneBadge")),
+						h("button",
+							{
+								className: "wsm-btn small primary", disabled: busy || !it.ownerWorkspaceId,
+								title: it.ownerWorkspaceId ? undefined : t("ownerGoneBadge"),
+								onClick: () => void restoreOne(it)
+							},
+							t("restoreBtn")),
+						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void restoreTo(it) }, t("restoreToBtn"))
+					))
+				) : null,
+				emptyWorkspaces.length > 0 ? h(Caption, { text: `${t("emptyWsCaption")} (${emptyWorkspaces.length})`, help: t("emptyWsHelp") }) : null,
+				emptyWorkspaces.length > 1 ? h("div", { className: "wsm-scanrow" },
+					h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void deleteEmptyAll(emptyWorkspaces) }, t("emptyWsDeleteAll"))
+				) : null,
+				emptyWorkspaces.length > 0 ? h("div", { className: "wsm-list" },
+					emptyWorkspaces.map((w) => h("div", { className: "wsm-item", key: w.workspaceId },
+						h("b", null, w.title),
+						h("span", { className: "wsm-cwd", title: w.path }, w.path),
+						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void deleteEmptyOne(w) }, t("emptyWsDelete"))
+					))
 				) : null,
 				h("div", { className: "wsm-history" },
 					h(Caption, { text: t("historySection"), help: t("historyHelp") }),
@@ -1133,9 +1308,9 @@ window.__ModuleLoader__.load({
 						const targetTitle = fresh.find((w) => w.workspaceId === targetId)?.title ?? targetId;
 						if (source && (source.sessionIds ?? []).length === 0
 							&& window.confirm(t("mergeDeleteConfirm", { count: okCount, title: workspace.title, target: targetTitle }))) {
-							const del = await ctx.get?.("workspaces")?.delete?.(workspace.workspaceId);
-							if (del?.ok) toast(t("mergeDone", { title: workspace.title }));
-							else toast(t("failed", { msg: del?.error?.message ?? "delete failed" }), true);
+							// 官方 delete 成功即 resolve（void）、失败 reject
+							await ctx.get?.("workspaces")?.delete?.(workspace.workspaceId);
+							toast(t("mergeDone", { title: workspace.title }));
 						}
 					} catch { /* 合并删除为可选步骤，失败静默 */ }
 				} catch (err) {
@@ -1155,26 +1330,43 @@ window.__ModuleLoader__.load({
 				setTimeout(() => { menuHeaderRow = null; }, 1000);
 			}, true);
 
-			// 向官方菜单 portal 注入「整组迁移…」项（克隆官方项的样式类，插在危险项之前）
+			// 向官方菜单 portal 注入两项（克隆官方项的样式类，插在危险项之前）：
+			// 「整组迁移…」= 批量移动 + 可选合并删除；「打开文件夹」= 系统文件管理器打开该分组目录。
 			function injectGroupMoveItem(menu, items, header) {
 				const model = items[0];
-				const el = document.createElement(model.tagName === "BUTTON" ? "button" : "div");
-				el.type = "button";
-				el.className = model.className;
-				el.setAttribute("role", "menuitem");
-				el.textContent = t("groupMoveMenu");
-				el.addEventListener("click", (e) => {
-					e.preventDefault();
-					e.stopPropagation();
-					menuHeaderRow = null;
-					// 关闭官方菜单：Escape + 菜单外部 pointerdown 双保险
-					document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-					document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-					void runGroupMoveFlow(header);
-				}, true);
+				const makeItem = (label, onClick) => {
+					const el = document.createElement(model.tagName === "BUTTON" ? "button" : "div");
+					el.type = "button";
+					el.className = model.className;
+					el.setAttribute("role", "menuitem");
+					el.textContent = label;
+					el.addEventListener("click", (e) => {
+						e.preventDefault();
+						e.stopPropagation();
+						menuHeaderRow = null;
+						// 关闭官方菜单：Escape + 菜单外部 pointerdown 双保险
+						document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+						document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+						onClick();
+					}, true);
+					return el;
+				};
+				const groupItem = makeItem(t("groupMoveMenu"), () => void runGroupMoveFlow(header));
+				const openItem = makeItem(t("openFolderMenu"), async () => {
+					try {
+						const list = await fetchWorkspaces();
+						const ws = resolveWorkspace(header, list);
+						if (!ws) return void toast(t("noTarget"), true);
+						const res = await rpcCall("mover.openFolder", { workspaceId: ws.workspaceId, path: ws.path });
+						if (!res?.ok) toast(t("failed", { msg: res?.error?.message ?? "open failed" }), true);
+					} catch (err) {
+						toast(t("failed", { msg: err?.message ?? err }), true);
+					}
+				});
 				const danger = items.find((it) => /danger/i.test(it.className || ""));
 				const anchor = danger && danger !== items[0] ? danger : items[items.length - 1];
-				anchor.before(el);
+				anchor.before(groupItem);
+				groupItem.after(openItem);
 			}
 
 			const menuObserver = new MutationObserver((muts) => {
