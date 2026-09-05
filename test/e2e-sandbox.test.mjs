@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { zstdCompressSync, constants } from 'node:zlib';
 
-import { apply, scanFrames, readHeader, artifactPath, openInFileManager, moveDir, stashBackup } from '../lib/index.js';
+import { apply, scanFrames, readHeader, artifactPath, openInFileManager, moveDir, stashBackup, verifyRelocatedArtifact } from '../lib/index.js';
 
 const OPTS = { params: { [constants.ZSTD_c_checksumFlag]: 1 } };
 const DEAD = 'E:\\wsm-dead-path'; // 刻意不存在的路径（孤儿分类用）
@@ -1302,4 +1302,68 @@ test('mover.backups.deleteOne：指定单份与全部份', async () => {
   assert.equal(all.value.deleted, 1);
   assert.equal(readdirSync(dir).filter((f) => f.startsWith('session-aaa.')).length, 0);
   assert.equal(readdirSync(dir).filter((f) => f.startsWith('session-bbb.')).length, 1, '其他会话备份不受影响');
+});
+
+//#region v1.0：迁移后一致性校验 + 一键修复
+
+test('verifyRelocatedArtifact：id/cwd 双确认，任一不符即抛错', () => {
+  const artifact = join(root, 'verify-src', 'session.jsonl.zstd');
+  mkdirSync(dirname(artifact), { recursive: true });
+  writeFileSync(artifact, makeArtifact({ type: 'session', id: 'session-aaa', cwd: A, title: 'Alpha discussion' }));
+  assert.equal(verifyRelocatedArtifact(artifact, 'session-aaa', A), true);
+  assert.throws(() => verifyRelocatedArtifact(artifact, 'session-zzz', A), /id mismatch/);
+  assert.throws(() => verifyRelocatedArtifact(artifact, 'session-aaa', B), /cwd mismatch/);
+});
+
+test('mover.move：成功结果携带 verified 标记（迁移后校验通过）', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  const res = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.verified, true);
+});
+
+test('mover.repairAll：挂错归位 + 未记账补账自动修复，孤儿跳过并说明原因', async () => {
+  apply(ctx);
+  // 挂错：档案在 B、记账在 A → home 到 B（夹具原本在 A，先挪到 B）
+  rmSync(dirname(artifactPath(root, A, 'session-aaa')), { recursive: true, force: true });
+  const bArtifact = artifactPath(root, B, 'session-aaa');
+  mkdirSync(dirname(bArtifact), { recursive: true });
+  writeFileSync(bArtifact, makeArtifact({ type: 'session', id: 'session-aaa', cwd: B, title: 'Alpha discussion' }));
+  entityA.record.sessionIds.push('session-aaa');
+  // 未记账且有匹配分组：档案在 B、无记账 → attach 到 B
+  const cArtifact = artifactPath(root, B, 'session-ccc');
+  mkdirSync(dirname(cArtifact), { recursive: true });
+  writeFileSync(cArtifact, makeArtifact({ type: 'session', id: 'session-ccc', cwd: B, title: 'Beta talk' }));
+  // 孤儿：cwd 指向不存在的目录 → 跳过
+  const goneDir = join(root, 'vanished-dir');
+  const oArtifact = artifactPath(root, goneDir, 'session-ooo');
+  mkdirSync(dirname(oArtifact), { recursive: true });
+  writeFileSync(oArtifact, makeArtifact({ type: 'session', id: 'session-ooo', cwd: goneDir, title: 'Lost' }));
+
+  const res = await call('mover.repairAll');
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.fixedCount, 2);
+  assert.equal(res.value.skippedCount, 1);
+  assert.equal(res.value.failedCount, 0);
+  assert.equal(res.value.skipped[0].sessionId, 'session-ooo');
+  assert.equal(res.value.skipped[0].reason, 'needs-target-workspace');
+  // 挂错已归位：A 不再记账 session-aaa，B 记账
+  assert.deepEqual(entityA.record.sessionIds, []);
+  assert.ok(entityB.record.sessionIds.includes('session-aaa'));
+  // 未记账已补账
+  assert.ok(entityB.record.sessionIds.includes('session-ccc'));
+  // 孤儿档案未被动过
+  assert.ok(existsSync(oArtifact));
+});
+
+test('mover.repairAll：一切正常时返回全零结果', async () => {
+  apply(ctx);
+  sharedIndex.sessionPaths.set('session-aaa', A);
+  entityA.record.sessionIds.push('session-aaa'); // 健康归属：不产生任何动作
+  const res = await call('mover.repairAll');
+  assert.equal(res.ok, true);
+  assert.equal(res.value.fixedCount, 0);
+  assert.equal(res.value.skippedCount, 0);
+  assert.equal(res.value.failedCount, 0);
 });

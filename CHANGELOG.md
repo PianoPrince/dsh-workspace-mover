@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## [1.0.0] - 2026-09-05
+
+### Added
+
+- **Post-move consistency verification**: every relocation — single move, batch move, and workspace re-point — now reads the relocated archive back and requires both the session id and the rewritten cwd to match before the move counts as done; a mismatch rolls the whole move back (destination moved back, original bytes restored) exactly like any other failure. `mover.move` results carry a `verified` flag.
+- **One-click repair**: a "Fix all" action in the rescue panel runs one scan pass and automatically fixes everything fixable — misfiled sessions are homed, unregistered sessions with a matching group are attached — while anything needing a decision (orphans, damaged archives, no matching group) is skipped with a stated reason. Results report fixed / skipped / failed counts; every fix stays individually isolated and goes through the same accounting-only paths (no files are moved).
+- **Panel filter**: a filter box matches title, session id, path, and group across every rescue list — orphaned, unregistered, misfiled, archived, recycle bin, and backups — with per-section shown/total counts; "Home all" acts on the currently filtered set.
+- New RPC endpoint `mover.repairAll`; `verifyRelocatedArtifact` is exported for tooling.
+- Tests 58 → 62 (verification helper pass/mismatch cases, verified flag on moves, repair-all mixed/empty scenarios).
+
 ## [0.9.0] - 2026-09-05
 
 ### Added

@@ -53,6 +53,7 @@ DeepSeek Harness's sidebar supports drag-to-reorder within a workspace, but drop
 - **💾 Backup management**: the byte-level backups that every move already creates are finally visible — grouped per session with copy count, footprint and date span; one-click restore (header round-trip verified before accounting) or per-session cleanup
 - **📂 Open folder**: a one-click entry in the header's "…" menu opens the group's directory in the system file manager
 - **⏪ Move history & undo**: Keeps the last 100 cross-workspace moves; bulk moves aggregate into one entry with whole-set undo, and undo generates its own backup with rollback protection
+- **✅ Post-move verification + one-click repair**: every relocation is read back and confirmed (id + cwd) before it counts — mismatches roll back wholesale; the rescue panel's "Fix all" runs every auto-fixable item in one pass (per-item isolation, three-state report), and all lists filter instantly by title / id / path
 - **🏷️ Session titles first**: Confirmation dialogs, rescue lists, and recent moves show session titles when available, falling back to "Untitled session"
 
 ## 🔬 Technical Notes
@@ -209,6 +210,12 @@ Compatibility when installed alongside other plugin categories:
 **DSH version sensitivities** (not plugin conflicts): unarchive writes through the registry's durable state channel and reports clearly on hosts that lack it rather than erroring; projection-cache titles are parsed defensively against the v3 shape and fall back to the on-disk header if the file is missing.
 
 ## 🆕 Recent Updates
+
+### v1.0.0 · 2026-09-05
+
+- Post-move consistency verification: every relocation (single, bulk, and workspace re-point) reads the archive back and requires id + cwd to match before counting as done — mismatches roll the whole move back
+- One-click repair: fixable items (misfiled homing, unregistered attach) run in one pass with per-item isolation; orphans and damaged archives are skipped with stated reasons, reported as fixed / skipped / failed
+- Panel filter: instantly narrow every rescue list by title / session id / path / group, with per-section shown/total counts
 
 ### v0.9.0 · 2026-09-05
 

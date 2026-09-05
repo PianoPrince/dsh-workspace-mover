@@ -126,7 +126,11 @@ window.__ModuleLoader__.load({
 				backupMeta: "{n} 份 · {size} · {range}",
 				backupDeleteBtn: "删除备份",
 				backupDeleteConfirm: "删除「{title}」的 {n} 份备份？删除后无法再从备份恢复。",
-				backupDeletedMsg: "✓ 已删除 {n} 份备份"
+				backupDeletedMsg: "✓ 已删除 {n} 份备份",
+				repairAllBtn: "一键修复",
+				repairAllDone: "✓ 已修复 {n} · 跳过 {s} · 失败 {f}",
+				skipNeedsTarget: "需选择目标分组",
+				filterPh: "筛选：标题 / 会话 ID / 路径…"
 			},
 			en: {
 				confirmTitle: "Move session across workspaces",
@@ -238,7 +242,11 @@ window.__ModuleLoader__.load({
 				backupMeta: "{n} copies · {size} · {range}",
 				backupDeleteBtn: "Delete backups",
 				backupDeleteConfirm: "Delete the {n} backup copies of \"{title}\"? They cannot be restored from afterwards.",
-				backupDeletedMsg: "✓ Deleted {n} backup copy(ies)"
+				backupDeletedMsg: "✓ Deleted {n} backup copy(ies)",
+				repairAllBtn: "Fix all",
+				repairAllDone: "✓ Fixed {n} · skipped {s} · failed {f}",
+				skipNeedsTarget: "needs a target group",
+				filterPh: "Filter: title / session id / path…"
 			}
 		};
 		const lang = (navigator.language || "en").toLowerCase().startsWith("zh") ? "zh" : "en";
@@ -556,6 +564,7 @@ window.__ModuleLoader__.load({
 			const [archived, setArchived] = useState(null);
 			const [trash, setTrash] = useState(null);
 			const [backups, setBackups] = useState(null);
+			const [query, setQuery] = useState("");
 
 			const call = async (endpoint, payload) => {
 				const res = await rpcCall(endpoint, payload ?? {});
@@ -952,6 +961,28 @@ window.__ModuleLoader__.load({
 				}
 			};
 
+			// 一键修复：可自动修复项（挂错归位 / 未记账补账）逐项处理，只动记账不搬文件
+			const repairAll = async () => {
+				setBusy(true);
+				setNote("");
+				try {
+					const res = await call("mover.repairAll");
+					setNote(t("repairAllDone", { n: res.fixedCount, s: res.skippedCount, f: res.failedCount }));
+					const perWs = new Map();
+					for (const r of res.fixed ?? []) {
+						const wid = r.homedTo ?? r.attachedTo;
+						if (wid) perWs.set(wid, [...(perWs.get(wid) ?? []), r.sessionId]);
+					}
+					for (const [wid, ids] of perWs) scheduleRecencyFix(ctx, wid, ids);
+					refreshWorkspaces();
+					await runScan();
+				} catch (err) {
+					setNote(t("failed", { msg: err?.message ?? err }));
+				} finally {
+					setBusy(false);
+				}
+			};
+
 			const items = scan?.items ?? [];
 			const orphaned = items.filter((it) => it.status === "orphaned");
 			const unregistered = items.filter((it) => it.status === "unregistered");
@@ -961,6 +992,19 @@ window.__ModuleLoader__.load({
 			const archivedItems = archived?.items ?? [];
 			const trashItems = trash?.items ?? [];
 			const backupItems = backups?.items ?? [];
+			// 面板筛选：标题 / 会话 ID / 路径 / 归属分组，命中任一即保留
+			const q = query.trim().toLowerCase();
+			const matchesQuery = (it) => {
+				if (!q) return true;
+				return [it.title, it.sessionId, it.cwd, it.homeTitle, it.ownerTitle].some((v) => String(v ?? "").toLowerCase().includes(q));
+			};
+			const orphanedV = orphaned.filter(matchesQuery);
+			const unregisteredV = unregistered.filter(matchesQuery);
+			const misfiledV = misfiled.filter(matchesQuery);
+			const archivedV = archivedItems.filter(matchesQuery);
+			const trashV = trashItems.filter(matchesQuery);
+			const backupV = backupItems.filter(matchesQuery);
+			const capCount = (shown, total) => (q ? `${shown}/${total}` : `${total}`);
 			const counts = scan?.counts ?? {};
 			const summaryParts = [
 				["orphaned", t("stalePath")],
@@ -975,6 +1019,13 @@ window.__ModuleLoader__.load({
 					t("rescueShort")),
 				h("div", { className: "wsm-scanrow" },
 					h("button", { className: "wsm-btn small primary", disabled: busy, onClick: () => void runScan() }, busy ? t("scanning") : t("scan")),
+					h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void repairAll() }, t("repairAllBtn")),
+					h("input",
+						{
+							className: "wsm-input", placeholder: t("filterPh"), value: query, disabled: busy,
+							onChange: (e) => setQuery(e.target.value), style: { maxWidth: "170px" }
+						}
+					),
 					scan ? h("span", { style: { fontSize: "12.5px", color: "var(--dsw-alias-label-tertiary,#999)" } },
 						t("scannedN", { n: scan.scanned }) + (summaryParts.length ? ` · ${summaryParts.join(" · ")}` : ""))
 						: null
@@ -995,9 +1046,9 @@ window.__ModuleLoader__.load({
 						h("button", { className: "wsm-btn small primary", disabled: busy, onClick: () => void repoint(row) }, t("wizardBtn"))
 					))
 				) : null,
-				orphaned.length > 0 ? h(Caption, { text: t("orphanedCaption"), help: t("helpPath") }) : null,
-				orphaned.length > 0 ? h("div", { className: "wsm-list" },
-					orphaned.map((it) => h("div", { className: "wsm-item", key: it.sessionId },
+				orphaned.length > 0 ? h(Caption, { text: `${t("orphanedCaption")} (${capCount(orphanedV.length, orphaned.length)})`, help: t("helpPath") }) : null,
+				orphanedV.length > 0 ? h("div", { className: "wsm-list" },
+					orphanedV.map((it) => h("div", { className: "wsm-item", key: it.sessionId },
 							h("span", { className: "wsm-mono" }, it.title || t("unnamedSession")),
 						it.archived ? h("span", { className: "wsm-badge" }, "archived") : null,
 						h("span", { className: "wsm-cwd" }, it.cwd ?? "?"),
@@ -1010,9 +1061,9 @@ window.__ModuleLoader__.load({
 						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void deleteToTrash(it) }, t("deleteBtn"))
 					))
 				) : null,
-				unregistered.length > 0 ? h(Caption, { text: t("unregCaption"), help: t("helpUnreg") }) : null,
-				unregistered.length > 0 ? h("div", { className: "wsm-list" },
-					unregistered.map((it) => h("div", { className: "wsm-item", key: it.sessionId },
+				unregistered.length > 0 ? h(Caption, { text: `${t("unregCaption")} (${capCount(unregisteredV.length, unregistered.length)})`, help: t("helpUnreg") }) : null,
+				unregisteredV.length > 0 ? h("div", { className: "wsm-list" },
+					unregisteredV.map((it) => h("div", { className: "wsm-item", key: it.sessionId },
 							h("span", { className: "wsm-mono" }, it.title || t("unnamedSession")),
 						it.archived ? h("span", { className: "wsm-badge" }, "archived") : null,
 						h("span", { className: "wsm-cwd" }, it.cwd ?? "?"),
@@ -1031,12 +1082,12 @@ window.__ModuleLoader__.load({
 						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void deleteToTrash(it) }, t("deleteBtn"))
 					))
 				) : null,
-				misfiled.length > 0 ? h(Caption, { text: `${t("misfiledCaption")} (${misfiled.length})`, help: t("misfiledHelp") }) : null,
+				misfiled.length > 0 ? h(Caption, { text: `${t("misfiledCaption")} (${capCount(misfiledV.length, misfiled.length)})`, help: t("misfiledHelp") }) : null,
 				misfiled.length > 1 ? h("div", { className: "wsm-scanrow" },
-					h("button", { className: "wsm-btn small primary", disabled: busy, onClick: () => void homeAll(misfiled) }, t("homeAllBtn"))
+					h("button", { className: "wsm-btn small primary", disabled: busy, onClick: () => void homeAll(misfiledV.length > 0 ? misfiledV : misfiled) }, t("homeAllBtn"))
 				) : null,
-					misfiled.length > 0 ? h("div", { className: "wsm-list" },
-						misfiled.map((it) => {
+				misfiledV.length > 0 ? h("div", { className: "wsm-list" },
+					misfiledV.map((it) => {
 							const ownerNames = (it.ownerWorkspaceIds ?? [])
 								.map((wid) => workspaces.find((w) => w.workspaceId === wid)?.title ?? wid.slice(0, 8))
 								.join("/") || "?";
@@ -1049,9 +1100,9 @@ window.__ModuleLoader__.load({
 							);
 						})
 					) : null,
-				archivedItems.length > 0 ? h(Caption, { text: `${t("archivedCaption")} (${archivedItems.length})`, help: t("archivedHelp") }) : null,
-				archivedItems.length > 0 ? h("div", { className: "wsm-list" },
-					archivedItems.map((it) => h("div", { className: "wsm-item", key: it.sessionId },
+				archivedItems.length > 0 ? h(Caption, { text: `${t("archivedCaption")} (${capCount(archivedV.length, archivedItems.length)})`, help: t("archivedHelp") }) : null,
+				archivedV.length > 0 ? h("div", { className: "wsm-list" },
+					archivedV.map((it) => h("div", { className: "wsm-item", key: it.sessionId },
 						h("span", { className: "wsm-mono" }, it.title || t("unnamedSession")),
 						it.suggestedWorkspaceId ? h("span", { className: "wsm-badge" }, t("misfiledLabel")) : null,
 						h("span", { className: "wsm-cwd", title: it.cwd ?? "" },
@@ -1067,12 +1118,12 @@ window.__ModuleLoader__.load({
 						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void deleteToTrash(it) }, t("deleteBtn"))
 					))
 				) : null,
-				trashItems.length > 0 ? h(Caption, { text: `${t("trashCaption")} (${trashItems.length})`, help: t("trashHelp") }) : null,
+				trashItems.length > 0 ? h(Caption, { text: `${t("trashCaption")} (${capCount(trashV.length, trashItems.length)})`, help: t("trashHelp") }) : null,
 				trashItems.length > 1 ? h("div", { className: "wsm-scanrow" },
 					h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void purgeAll(trashItems) }, t("purgeAllBtn"))
 				) : null,
-				trashItems.length > 0 ? h("div", { className: "wsm-list" },
-					trashItems.map((it) => h("div", { className: "wsm-item", key: it.entry },
+				trashV.length > 0 ? h("div", { className: "wsm-list" },
+					trashV.map((it) => h("div", { className: "wsm-item", key: it.entry },
 						h("span", { className: "wsm-mono" }, it.title || t("unnamedSession")),
 						h("span", { className: "wsm-cwd", title: it.cwd ?? "" }, it.ownerTitle || t("ownerGoneBadge")),
 						h("span", { className: "wsm-cwd" }, it.deletedAt ? new Date(it.deletedAt).toLocaleDateString() : ""),
@@ -1108,9 +1159,9 @@ window.__ModuleLoader__.load({
 						);
 					})) : h("div", { className: "wsm-note" }, t("historyEmpty"))
 				),
-				backupItems.length > 0 ? h(Caption, { text: `${t("backupsCaption")} (${backupItems.length})`, help: t("backupsHelp") }) : null,
-				backupItems.length > 0 ? h("div", { className: "wsm-list" },
-					backupItems.map((it) => h("div", { className: "wsm-item", key: it.sessionId },
+				backupItems.length > 0 ? h(Caption, { text: `${t("backupsCaption")} (${capCount(backupV.length, backupItems.length)})`, help: t("backupsHelp") }) : null,
+				backupV.length > 0 ? h("div", { className: "wsm-list" },
+					backupV.map((it) => h("div", { className: "wsm-item", key: it.sessionId },
 						h("span", { className: "wsm-mono" }, it.title || t("unnamedSession")),
 						h("span", { className: "wsm-cwd", title: it.cwd ?? "" }, t("backupMeta", { n: it.count, size: fmtBytes(it.totalBytes), range: fmtRange(it) })),
 						h("button", { className: "wsm-btn small primary", disabled: busy, onClick: () => void backupRestore(it) }, t("restoreBtn")),
