@@ -53,6 +53,7 @@ DeepSeek Harness's sidebar supports drag-to-reorder within a workspace, but drop
 - **💾 Backup management**: the byte-level backups that every move already creates are finally visible — grouped per session with copy count, footprint and date span; one-click restore (header round-trip verified before accounting) or per-session cleanup
 - **📂 Open folder**: a one-click entry in the header's "…" menu opens the group's directory in the system file manager
 - **⏪ Move history & undo**: Keeps the last 100 cross-workspace moves; bulk moves aggregate into one entry with whole-set undo, and undo generates its own backup with rollback protection
+- **🧾 Task center + 🛡️ Data protection**: bulk moves persist per-item state (done/failed, last error and attempt time) with one-click retry; recycle bin and backup counts / footprint summarized, time-based cleanup previews freed space before running
 - **✅ Post-move verification + one-click repair**: every relocation is read back and confirmed (id + cwd) before it counts — mismatches roll back wholesale; the rescue panel's "Fix all" runs every auto-fixable item in one pass (per-item isolation, three-state report), and all lists filter instantly by title / id / path
 - **🏷️ Session titles first**: Confirmation dialogs, rescue lists, and recent moves show session titles when available, falling back to "Untitled session"
 
@@ -213,6 +214,10 @@ Compatibility when installed alongside other plugin categories:
 **DSH version sensitivities** (not plugin conflicts): unarchive writes through the registry's durable state channel and reports clearly on hosts that lack it rather than erroring; projection-cache titles are parsed defensively against the v3 shape and fall back to the on-disk header if the file is missing.
 
 ## 🆕 Recent Updates
+
+### v1.3.0 · 2026-09-05
+
+- Data protection summary and time-based cleanup: recycle bin and backup counts / footprint at a glance; "clean data older than 30 days" previews the freed space before asking for confirmation
 
 ### v1.2.0 · 2026-09-05
 
