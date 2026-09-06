@@ -2,6 +2,45 @@
 
 All notable changes to this project are documented here.
 
+## [1.4.0] - 2026-09-06
+
+### Added
+
+- **Concurrency guards (try-acquire locks)**: per-session and per-workspace keys now serialize every entry point — single move, batch move, trash delete / restore, backup restore, and workspace re-point. A second operation touching the same key never queues or deadlocks: it fails immediately with a stable `busy` code, and the client explains that the session is still being processed. Batch inputs are de-duplicated so one batch cannot race itself.
+- **Stable RPC error codes**: every RPC failure now carries a machine-readable `code` — `busy / conflict / not-found / invalid-input / not-writable / insufficient-space / backup-failed / rollback-failed / corrupt-artifact / unsupported / bad-request / internal-error` — mapped at the dispatch boundary, with codes attached at the source where a message pattern would mislead (e.g. a writability-probe `EEXIST` maps to `not-writable`, not `conflict`). The client reads `error.code` first and keeps the old English-message matching only as a fallback.
+- **Minimal recovery ledger**: any "rollback also failed" path (attach-rollback failure on move; manifest-write failure plus failed move-back on delete) writes a durable record to `$DSH_HOME/workspace-mover/recovery.json` (kind, phase, session, source / target, last error, time). The scan response carries `recoveryCount`, `mover.status` reports it, and the rescue panel shows a red "needs manual recovery" row — nothing is auto-deleted and the session files plus backups always remain in place.
+- **Capability report**: `mover.status` now enumerates which official services it actually detected (registry, persistence, projection read/write, archive channel, coordinator states, file references, agents) plus degraded features, so support questions answer themselves.
+- Input caps: session / workspace ids are validated (non-empty, ≤ 300 chars) at every entry point; data-cleanup day ranges clamp to [1, 3650].
+
+### Fixed
+
+- **Backup now precedes every side effect.** `moveSession` previously detached accounting before taking the byte-level backup, so a backup failure left a detached, unaccounted session behind. The pipeline now reads the source and stashes the backup first — a backup failure aborts with `backup-failed` and nothing has been touched (no accounting, no files, no indexes).
+- **Scan truncation kept the wrong 400.** The 400-item scan cap was applied before the mtime sort, so very large libraries showed the oldest directory-order slice while the newest sessions could vanish from the rescue panel entirely. Metadata (stat) is now collected for everything first, sorted newest-first, and only the newest 400 get header-parsed — same parse cost, correct survivors.
+- Tests 70 → 77 (backup-failure zero side effects, concurrent same-session double move → one ok / one busy, repoint-holds-lock → move busy, error-code assertions for conflict / not-writable / unsupported / not-found / invalid-input, newest-400 scan truncation, recovery-record write + recoveryCount).
+
+## [1.3.0] - 2026-09-05
+
+### Added
+
+- **Data protection summary and time-based cleanup**: one combined line over the recycle bin and backups (item counts and footprint), plus a clean-older-than-30-days action — dry-run first (shows exactly how many entries and how much space would be freed), explicit confirmation, then per-item cleanup with the freed-space report. Corrupt or stale entries never block the rest.
+- New RPC endpoint: `mover.data.cleanup` (with `dryRun`).
+- Tests 69 → 70.
+
+## [1.2.0] - 2026-09-05
+
+### Added
+
+- **Migration task center (record-style)**: every bulk move is persisted as a task — per-session state (done / failed with last error and last attempt time), source and target paths. Failed items retry in one click; each retry resolves the session's CURRENT location (never the stale recorded path), stays individually isolated, and an "already at target" failure converges to done (idempotent). Retried moves land in the move history like normal batches, so undo still works. Records are clearable without touching moved sessions.
+- New RPC endpoints: `mover.tasks.list / retry / forget`. `mover.moveMany` results now include a `taskId`.
+- Tests 66 → 69.
+
+## [1.1.0] - 2026-09-05
+
+### Added
+
+- **Preflight completion**: moveSession preflights before touching anything — double-accounting detection (extra owners detached during the move instead of lingering as ghosts), target writability probe, advisory disk-space check. The move detaches ALL owners and the post-move single-owner pass detaches any stale remainder; rollbacks re-attach every prior owner. Results carry a `warnings` array.
+- Tests 64 → 66.
+
 ## [1.0.0] - 2026-09-05
 
 ### Added

@@ -54,6 +54,7 @@ DeepSeek Harness's sidebar supports drag-to-reorder within a workspace, but drop
 - **📂 Open folder**: a one-click entry in the header's "…" menu opens the group's directory in the system file manager
 - **⏪ Move history & undo**: Keeps the last 100 cross-workspace moves; bulk moves aggregate into one entry with whole-set undo, and undo generates its own backup with rollback protection
 - **🧾 Task center + 🛡️ Data protection**: bulk moves persist per-item state (done/failed, last error and attempt time) with one-click retry; recycle bin and backup counts / footprint summarized, time-based cleanup previews freed space before running
+- **🔒 Concurrency guards + error codes**: concurrent operations on the same session / target workspace report "busy" immediately instead of queueing or trampling each other (backup-first transaction order means a failed backup changes nothing); every RPC error carries a stable machine-readable code; "rollback also failed" paths write a recovery record surfaced as a red panel row — session files and backups always stay in place
 - **✅ Post-move verification + one-click repair**: every relocation is read back and confirmed (id + cwd) before it counts — mismatches roll back wholesale; the rescue panel's "Fix all" runs every auto-fixable item in one pass (per-item isolation, three-state report), and all lists filter instantly by title / id / path
 - **🏷️ Session titles first**: Confirmation dialogs, rescue lists, and recent moves show session titles when available, falling back to "Untitled session"
 
@@ -215,6 +216,14 @@ Compatibility when installed alongside other plugin categories:
 
 ## 🆕 Recent Updates
 
+### v1.4.0 · 2026-09-06
+
+- Concurrency guards: concurrent operations on the same session / target workspace return "busy" immediately — never queued, never deadlocked; bulk moves are de-duplicated so a batch cannot race itself
+- Error-code protocol: every RPC error carries a stable machine-readable code (busy / conflict / not-found / rollback-failed …); the client reacts to codes instead of matching English message text
+- Recovery ledger: extreme "rollback also failed" paths write a durable recovery record, surfaced as a red "needs manual recovery" row in the rescue panel (session files and backups always remain in place — never auto-deleted)
+- Capability report: `mover.status` enumerates detected official services and degraded features for painless support
+- Transaction ordering: the byte-level backup now happens before every side effect — a backup failure aborts with zero changes to accounting, files, or indexes
+
 ### v1.3.0 · 2026-09-05
 
 - Data protection summary and time-based cleanup: recycle bin and backup counts / footprint at a glance; "clean data older than 30 days" previews the freed space before asking for confirmation
@@ -298,7 +307,7 @@ Compatibility when installed alongside other plugin categories:
 - Sessions still resident in harness memory refuse deletion (their live objects would zombie-recreate files) and get an actionable toast instead;
 - Only sessions mid-turn are rejected by default; idle resident sessions get their write-path ownership fixed after moving, preventing history forks;
 - All registry/persistence internals are wrapped in try/catch—on failure the plugin degrades to functional-with-a-restart-hint instead of breaking;
-- Compatibility targets: Node ≥ 22, dsh 0.1.1-rc.2; core pure functions and end-to-end sandbox tests ship via `npm test` (70 cases covering rollback paths, rescue scan/repair, history undo, workspace repoint, post-move verification, recycle bin and backup restore, task center, and data-protection cleanup).
+- Compatibility targets: Node ≥ 22, dsh 0.1.1-rc.2; core pure functions and end-to-end sandbox tests ship via `npm test` (77 cases covering rollback paths, rescue scan/repair, history undo, workspace repoint, post-move verification, recycle bin and backup restore, task center, data-protection cleanup, concurrency locks and the error-code protocol).
 
 ## ⚠️ Known Limitations
 
