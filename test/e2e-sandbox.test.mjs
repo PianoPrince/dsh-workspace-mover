@@ -3,12 +3,12 @@
 // 备份目录通过 DSH_HOME 重定向到临时区，不污染真实环境。
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync, renameSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync, renameSync, realpathSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { zstdCompressSync, constants } from 'node:zlib';
 
-import { apply, scanFrames, readHeader, artifactPath, openInFileManager, moveDir, stashBackup, verifyRelocatedArtifact, deleteSessionToTrash } from '../lib/index.js';
+import { apply, scanFrames, readHeader, artifactPath, openInFileManager, moveDir, stashBackup, verifyRelocatedArtifact, deleteSessionToTrash, moveSession, SCAN_MAX_ITEMS } from '../lib/index.js';
 
 const OPTS = { params: { [constants.ZSTD_c_checksumFlag]: 1 } };
 const DEAD = 'E:\\wsm-dead-path'; // 刻意不存在的路径（孤儿分类用）
@@ -1574,4 +1574,140 @@ test('mover.data.cleanup：dryRun 只统计，正式清理只动过期项且报�
   assert.equal(readdirSync(bdir).filter((f) => f.startsWith('session-aaa.')).length, 1, '新备份保留');
   const list = await call('mover.trash.list');
   assert.equal(list.value.items[0].sessionId, 'session-bbb', '留下的是新条目');
+});
+
+// ===== v1.4.0 事务与并发加固 =====
+
+test('v1.4 备份失败 = 零副作用：stash 先于预检/detach，失败即整体放弃', async () => {
+  apply(ctx);
+  await assert.rejects(
+    moveSession(ctx, { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' }, {
+      stashImpl: () => { throw new Error('disk on fire'); }
+    }),
+    /backup failed, nothing was changed/
+  );
+  // 源档案与头部原样
+  const header = readHeader(readFileSync(findArtifact('session-aaa')));
+  assert.equal(header.cwd, A);
+  // 记账未动（夹具本就未记账；备份失败发生在 detach 之前，摘账一次都没发生）
+  assert.equal(entityA.detached.length, 0);
+  // 目标位置无残留
+  assert.equal(existsSync(artifactPath(root, B, 'session-aaa')), false);
+});
+
+test('v1.4 并发双 move 同会话：恰好一成功一 busy（try-acquire 不排队）', async () => {
+  apply(ctx);
+  const [r1, r2] = await Promise.all([
+    call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' }),
+    call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' })
+  ]);
+  const winner = r1.ok ? r1 : r2;
+  const loser = r1.ok ? r2 : r1;
+  assert.equal(winner.ok, true);
+  assert.equal(loser.ok, false);
+  assert.equal(loser.error.code, 'busy', loser.error?.message);
+  // 终态一致：会话落在 B 且记账正确
+  assert.equal(readHeader(readFileSync(findArtifact('session-aaa'))).cwd, B);
+  assert.ok(entityB.record.sessionIds.includes('session-aaa'));
+});
+
+test('v1.4 repoint 持目标工作区锁期间，move 返回 busy', async () => {
+  apply(ctx);
+  const gamma = join(root, 'proj-gamma');
+  mkdirSync(gamma, { recursive: true });
+  const [rp, mv] = await Promise.all([
+    call('mover.repoint', { workspaceId: 'wid-b', newPath: gamma, dryRun: true }),
+    call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' })
+  ]);
+  assert.equal(rp.ok, true, `repoint 应成功: ${rp?.error?.message ?? ''}`);
+  assert.equal(mv.ok, false);
+  assert.equal(mv.error.code, 'busy', mv.error?.message);
+  // dryRun 不改路径；会话仍在 A
+  assert.equal(entityB.path, B);
+  assert.equal(readHeader(readFileSync(findArtifact('session-aaa'))).cwd, A);
+});
+
+test('v1.4 错误码协议：conflict / not-found / invalid-input', async () => {
+  apply(ctx);
+  const first = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(first.ok, true);
+  // 已在目标 → 冲突
+  const again = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(again.ok, false);
+  assert.equal(again.error.code, 'conflict', again.error?.message);
+  // 未知目标工作区 → not-found
+  const unknown = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-nope' });
+  assert.equal(unknown.ok, false);
+  assert.equal(unknown.error.code, 'not-found', unknown.error?.message);
+  // 超 300 字符的 id → invalid-input
+  const bad = await call('mover.move', { sessionId: 'x'.repeat(301), targetWorkspaceId: 'wid-b' });
+  assert.equal(bad.ok, false);
+  assert.equal(bad.error.code, 'invalid-input', bad.error?.message);
+});
+
+test('v1.4 错误码协议：not-writable（预检拒绝零副作用）与 unsupported', async () => {
+  apply(ctx);
+  // 用普通文件占住目标会话目录 → 可写探测 mkdir 失败
+  writeFileSync(dirname(artifactPath(root, B, 'session-aaa')), 'blocker');
+  const res = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(res.ok, false);
+  assert.equal(res.error.code, 'not-writable', res.error?.message);
+  // 预检在 detach 之前 → 摘账一次都没发生、目标无残留
+  assert.equal(entityA.detached.length, 0);
+  assert.equal(existsSync(artifactPath(root, B, 'session-aaa')), false, '目标无残留');
+
+  // 注册表缺状态变更 API → unarchive 降级为 unsupported
+  ctx.workspaceRegistry.archivedSessionIds = ['session-aaa'];
+  const un = await call('mover.unarchive', { sessionId: 'session-aaa' });
+  assert.equal(un.ok, false);
+  assert.equal(un.error.code, 'unsupported', un.error?.message);
+});
+
+test('v1.4 scan 超限截断：先按 mtime 排序，保留最新 400 条', async () => {
+  apply(ctx);
+  const CAP = SCAN_MAX_ITEMS; // 400
+  const EXTRA = 10;
+  const base = Date.now() - 1_000_000;
+  for (let i = 0; i < CAP + EXTRA; i++) {
+    const id = `session-gen-${String(i).padStart(3, '0')}`;
+    const p = artifactPath(root, A, id);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, makeArtifact({ type: 'session', id, cwd: A, title: `Gen ${i}` }));
+    const t = new Date(base + i * 1000);
+    utimesSync(p, t, t);
+  }
+  const res = await call('mover.scan');
+  assert.equal(res.ok, true);
+  assert.equal(res.value.scanned, CAP + EXTRA + 1, '含夹具 session-aaa');
+  assert.equal(res.value.truncated, true);
+  assert.equal(res.value.items.length, CAP);
+  const ids = new Set(res.value.items.map((it) => it.sessionId));
+  assert.ok(ids.has('session-gen-409'), '最新的生成会话必须保留');
+  assert.equal(ids.has('session-gen-000'), false, '最旧的生成会话必须被截掉');
+  assert.ok(ids.has('session-aaa'), '整体最新的夹具会话保留');
+});
+
+test('v1.4 回滚也失败 → 写 recovery 记录，scan 报告 recoveryCount', async () => {
+  apply(ctx);
+  // 注入：移动"成功"（假）+ manifest 落盘失败 → 搬回必然失败（entryDir/session 不存在）→ recordRecovery
+  await assert.rejects(
+    deleteSessionToTrash(ctx, { sessionId: 'session-aaa' }, {
+      moveImpl: () => 'rename',
+      writeManifestImpl: () => { throw new Error('disk on fire'); }
+    }),
+    /manifest write failed/
+  );
+  // 文件从未真正离开源位置；摘账一次都没发生（manifest 落盘在四件套清理之前）
+  assert.ok(existsSync(artifactPath(root, A, 'session-aaa')));
+  assert.equal(entityA.detached.length, 0);
+
+  const rec = JSON.parse(readFileSync(join(root, 'workspace-mover', 'recovery.json'), 'utf8'));
+  assert.equal(rec.records.length, 1);
+  assert.equal(rec.records[0].kind, 'delete');
+  assert.equal(rec.records[0].phase, 'manifest-rollback');
+  assert.equal(rec.records[0].sessionId, 'session-aaa');
+
+  const scan = await call('mover.scan');
+  assert.equal(scan.ok, true);
+  assert.equal(scan.value.recoveryCount, 1);
 });
