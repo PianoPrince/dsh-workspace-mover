@@ -128,6 +128,8 @@ window.__ModuleLoader__.load({
 				backupDeleteConfirm: "删除「{title}」的 {n} 份备份？删除后无法再从备份恢复。",
 				backupDeletedMsg: "✓ 已删除 {n} 份备份",
 				residentRefuse: "该会话仍驻留在 Harness 内存中（最近被打开过，文件删了会被它重建）。请重启 Harness 释放常驻会话后再删除。",
+				sessionBusy: "该会话正在处理中（可能有迁移 / 还原 / 删除操作尚未完成），请稍后再试。",
+				recoveryNote: "检测到 {n} 条自动回滚也失败的记录，需人工确认：会话文件与备份均保留在原处，未丢失。请勿手动清理 pluginData 目录，查看 recovery.json 或联系开发者处理。",
 				repairAllBtn: "一键修复",
 				repairAllDone: "✓ 已修复 {n} · 跳过 {s} · 失败 {f}",
 				skipNeedsTarget: "需选择目标分组",
@@ -256,6 +258,8 @@ window.__ModuleLoader__.load({
 				backupDeleteConfirm: "Delete the {n} backup copies of \"{title}\"? They cannot be restored from afterwards.",
 				backupDeletedMsg: "✓ Deleted {n} backup copy(ies)",
 				residentRefuse: "This session is still resident in harness memory (opened recently) and would re-create its files. Restart the harness to release it, then delete again.",
+				sessionBusy: "This session is busy: a move / restore / delete is still in flight. Try again in a moment.",
+				recoveryNote: "{n} record(s) need manual recovery: automatic rollback also failed. Session files and backups are all kept in place — nothing was lost. Do not clean the pluginData directory by hand; inspect recovery.json or contact the developer.",
 				repairAllBtn: "Fix all",
 				repairAllDone: "✓ Fixed {n} · skipped {s} · failed {f}",
 				skipNeedsTarget: "needs a target group",
@@ -593,7 +597,12 @@ window.__ModuleLoader__.load({
 
 			const call = async (endpoint, payload) => {
 				const res = await rpcCall(endpoint, payload ?? {});
-				if (!res?.ok) throw new Error(res?.error?.message ?? endpoint);
+				if (!res?.ok) {
+					// v1.4 错误码协议：code 随异常一起抛出，客户端按 code 决定交互（文案仅兜底）
+					const err = new Error(res?.error?.message ?? endpoint);
+					err.code = res?.error?.code;
+					throw err;
+				}
 				return res.value;
 			};
 
@@ -629,7 +638,11 @@ window.__ModuleLoader__.load({
 				setNote("");
 				try {
 					const res = await rpcCall("mover.move", { sessionId: item.sessionId, sessionTitle: item.title, targetWorkspaceId: target });
-					if (!res?.ok) throw new Error(res?.error?.message ?? "move failed");
+					if (!res?.ok) {
+						const err = new Error(res?.error?.message ?? "move failed");
+						err.code = res?.error?.code;
+						throw err;
+					}
 					const wsTitle = workspaces.find((w) => w.workspaceId === target)?.title ?? "";
 					setNote(res.value?.attached ? t("selfHealed") : t("relinked", { title: wsTitle }));
 					refreshWorkspaces();
@@ -836,7 +849,9 @@ window.__ModuleLoader__.load({
 			// 失败双通道：面板底部 note + toast 浮层（note 在长列表里容易被错过）
 			const failNote = (err) => {
 				const raw = String(err?.message ?? err);
-				const msg = /resident in memory/.test(raw) ? t("residentRefuse") : t("failed", { msg: raw });
+				const busy = err?.code === "busy" || /resident in memory/.test(raw);
+				const msg = !busy ? t("failed", { msg: raw })
+					: /resident in memory/.test(raw) ? t("residentRefuse") : t("sessionBusy");
 				setNote(msg);
 				toast(msg, true);
 			};
@@ -871,7 +886,9 @@ window.__ModuleLoader__.load({
 					await runScan();
 				} catch (err) {
 					const msg = String(err?.message ?? err);
-					if (!/no registered workspace|already exists/.test(msg)) {
+					// code 优先（conflict/not-found），英文文案正则保留为旧宿主兜底
+					const needsPicker = err?.code === "conflict" || /no registered workspace|already exists/.test(msg);
+					if (!needsPicker) {
 						setNote(t("failed", { msg }));
 						return;
 					}
@@ -958,7 +975,9 @@ window.__ModuleLoader__.load({
 					finish(await call("mover.backups.restore", { sessionId: item.sessionId }));
 				} catch (err) {
 					const msg = String(err?.message ?? err);
-					if (!/no registered workspace|already exists/.test(msg)) {
+					// code 优先（conflict/not-found），英文文案正则保留为旧宿主兜底
+					const needsPicker = err?.code === "conflict" || /no registered workspace|already exists/.test(msg);
+					if (!needsPicker) {
 						setNote(t("failed", { msg }));
 						return;
 					}
@@ -1283,7 +1302,10 @@ window.__ModuleLoader__.load({
 						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void taskForget(it) }, t("taskForgetBtn"))
 					))
 				) : null,
-				scan && orphaned.length === 0 && unregistered.length === 0 && items.length > 0
+				scan && (scan.recoveryCount ?? 0) > 0
+					? h("div", { className: "wsm-note", style: { color: "var(--dsw-alias-state-error-primary,#dc2626)", marginTop: "10px" } }, t("recoveryNote", { n: scan.recoveryCount }))
+					: null,
+				scan && orphaned.length === 0 && unregistered.length === 0 && items.length > 0 && (scan.recoveryCount ?? 0) === 0
 					? h("div", { className: "wsm-note" }, t("allClear"))
 					: null,
 				scan && scan.ghosts.length > 0 ? h("div", { style: { marginTop: "4px" } },
@@ -1646,7 +1668,8 @@ window.__ModuleLoader__.load({
 							if (res.value?.restartHint) setTimeout(() => toast(t("restartHint"), true), 1200);
 						} else {
 							const msg = res?.error?.message ?? "unknown";
-							const text = (/roll/i.test(msg) ? t("rolledBack", { msg }) : t("failed", { msg }));
+							const rolled = res?.error?.code === "rollback-failed" || /roll/i.test(msg);
+							const text = (rolled ? t("rolledBack", { msg }) : t("failed", { msg }));
 							toast(text, true);
 						}
 					} catch (err) {
@@ -1662,7 +1685,8 @@ window.__ModuleLoader__.load({
 					const res = await rpcCall("mover.moveMany", { sessions, targetWorkspaceId: workspace.workspaceId });
 					if (!res?.ok) {
 						const msg = res?.error?.message ?? "unknown";
-						return void toast((/roll/i.test(msg) ? t("rolledBack", { msg }) : t("failed", { msg })), true);
+						const rolled = res?.error?.code === "rollback-failed" || /roll/i.test(msg);
+						return void toast((rolled ? t("rolledBack", { msg }) : t("failed", { msg })), true);
 					}
 					const { movedCount, attachedCount, failedCount } = res.value ?? {};
 					const okCount = (movedCount ?? 0) + (attachedCount ?? 0);
@@ -1698,7 +1722,8 @@ window.__ModuleLoader__.load({
 					});
 					if (!res?.ok) {
 						const msg = res?.error?.message ?? "unknown";
-						return void toast((/roll/i.test(msg) ? t("rolledBack", { msg }) : t("failed", { msg })), true);
+						const rolled = res?.error?.code === "rollback-failed" || /roll/i.test(msg);
+						return void toast((rolled ? t("rolledBack", { msg }) : t("failed", { msg })), true);
 					}
 					const { movedCount, attachedCount, failedCount } = res.value ?? {};
 					const okCount = (movedCount ?? 0) + (attachedCount ?? 0);
