@@ -21,3 +21,6 @@ jobs:
       - run: node .github/scripts/traffic-badge.mjs
         env:
           TRAFFIC_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
+      - run: node .github/scripts/release-downloads.mjs
+        env:
+          TRAFFIC_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
