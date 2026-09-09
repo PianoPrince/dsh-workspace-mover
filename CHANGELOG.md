@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented here.
 
+## [1.4.2] - 2026-09-09
+
+### Added
+
+- GitHub Release tags now publish a versioned `.tgz` asset and collect its download count separately from repository clones.
+- The public README keeps only the observed GitHub clone metric; the Release downloads badge remains visually hidden until the total exceeds 10.
+
+### Fixed
+
+- Traffic history collection now consumes GitHub's `clones[]` response, upserts daily corrections, and labels the cumulative value with its observation start date.
+
+## [1.4.1] - 2026-09-09
+
+### Fixed
+
+- **GitHub traffic history now uses the real `clones[]` response field.** The collector no longer mistakes the rolling 14-day aggregate for an all-time total.
+- Daily clone rows are upserted by date, and the badges now distinguish observed cumulative clones from GitHub's current 14-day clone and unique-cloner window.
+- Added deterministic traffic-response contract tests and migrated legacy state without presenting the old estimate as verified history.
+
 ## [1.4.0] - 2026-09-06
 
 ### Added

@@ -20,7 +20,13 @@ jobs:
           node-version: 22
       - name: Extract changelog for the tagged version
         run: node .github/scripts/extract-changelog.mjs "${GITHUB_REF_NAME}" > RELEASE_NOTES.md
+      - name: Build release asset
+        run: npm pack --ignore-scripts --pack-destination .
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
-        run: gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --notes-file RELEASE_NOTES.md
+        run: gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --notes-file RELEASE_NOTES.md "dsh-workspace-mover-*.tgz"
+      - name: Update release download metric
+        env:
+          TRAFFIC_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
+        run: node .github/scripts/release-downloads.mjs

@@ -1,6 +1,6 @@
 {
   "name": "dsh-workspace-mover",
-  "version": "1.4.0",
+  "version": "1.4.2",
   "description": "在 DSH 侧边栏安全迁移会话：真迁移原始档案，支持失联会话恢复、移动历史和一键撤回。",
   "type": "module",
   "main": "lib/index.js",
@@ -18,7 +18,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test test/core.test.mjs test/e2e-sandbox.test.mjs"
+    "test": "node --test test/core.test.mjs test/e2e-sandbox.test.mjs test/traffic-badge.test.mjs"
   },
   "keywords": [
     "deepseek-harness",
