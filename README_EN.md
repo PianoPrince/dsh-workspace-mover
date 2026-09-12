@@ -5,13 +5,21 @@
 <!-- Hero -->
 <div align="center">
   <b style="font-size: 1.15em;">Drag a session onto another workspace in the sidebar—a true move of the original archive, not a copy</b><br /><br />
-  <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" /></a>
-  <a href="https://github.com/PianoPrince/dsh-workspace-mover/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/PianoPrince/dsh-workspace-mover" /></a>
-  <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
-  <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" />
-  <img alt="npm dependencies: 0" src="https://img.shields.io/badge/npm%20dependencies-0-4d6bfe" /><br /><br />
-  <a href="https://awesome-dsh-plugin.com"><img alt="Awesome DSH Plugin" src="https://awesome-dsh-plugin.com/badge.svg" /></a>
-  <img alt="True move" src="https://img.shields.io/badge/-True%20move-4d6bfe" /> <img alt="Zero token cost" src="https://img.shields.io/badge/-Zero%20token%20cost-4d6bfe" /> <img alt="Backup & rollback" src="https://img.shields.io/badge/-Backup%20%26%20rollback-4d6bfe" /> <img alt="Orphan rescue" src="https://img.shields.io/badge/-Orphan%20rescue-4d6bfe" /> <img alt="One-click undo" src="https://img.shields.io/badge/-One--click%20undo-4d6bfe" /> <img alt="Theme aware" src="https://img.shields.io/badge/-Theme%20aware-4d6bfe" /> <img alt="GitHub clones observed" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2FPianoPrince%2Fc14345658550a4a308570acfbaf9d170%2Fraw%2Fwsm-clones-total.json" /> <!-- release-downloads-badge:start --><!-- release-downloads-badge:end -->
+  <p style="font-size: 0; line-height: 1;">
+    <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
+    <a href="https://github.com/PianoPrince/dsh-workspace-mover/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/PianoPrince/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
+    <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" style="height:20px; margin:0 2px;" /></a>
+    <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
+    <img alt="npm dependencies: 0" src="https://img.shields.io/badge/npm%20dependencies-0-4d6bfe" style="height:20px; margin:0 2px;" />
+    <a href="https://awesome-dsh-plugin.com"><img alt="Awesome DSH Plugin" src="https://awesome-dsh-plugin.com/badge.svg" style="height:20px; margin:0 2px;" /></a>
+  </p>
+  <p style="font-size: 0; line-height: 1;">
+    <img alt="True move" src="https://img.shields.io/badge/-True%20move-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="Zero token cost" src="https://img.shields.io/badge/-Zero%20token%20cost-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="Backup and rollback" src="https://img.shields.io/badge/-Backup%20%26%20rollback-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="GitHub clones observed (with uniques)" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2FPianoPrince%2Fc14345658550a4a308570acfbaf9d170%2Fraw%2Fwsm-clones-total.json" style="height:20px; margin:0 2px;" />
+    <!-- release-downloads-badge:start --><!-- release-downloads-badge:end -->
+  </p>
 </div>
 
 <div align="center">
@@ -21,59 +29,39 @@
 ## 📑 Table of Contents
 
 - [✨ Features](#-features)
-- [🔬 Technical Notes](#-technical-notes)
 - [🚀 Install](#-install)
 - [🖼️ Tour](#️-tour)
 - [⌨️ Usage](#️-usage)
-- [🔌 DSH Integration](#-dsh-integration)
-- [🤝 Coexistence with Other Plugins](#-coexistence-with-other-plugins)
-- [🆕 Recent Updates](#-recent-updates)
-- [🔐 Security](#-security) · [⚠️ Known Limitations](#️-known-limitations)
+- [🔌 How it integrates with DSH](#-how-it-integrates-with-dsh)
+- [🤝 Coexistence with other plugins](#-coexistence-with-other-plugins)
+- [🧩 Compatibility and uninstall](#-compatibility-and-uninstall)
+- [🔐 Security guarantees](#-security-guarantees)
+- [⚠️ Known limitations](#️-known-limitations)
+- [🆕 Recent version](#-recent-version)
 
 ---
 
 ## ✨ Features
 
-DeepSeek Harness's sidebar supports drag-to-reorder within a workspace, but dropping a session onto **another workspace** is silently ignored—the official RPC only exposes within-workspace `insertSessionBefore` and has no cross-workspace move endpoint. This plugin fills that gap:
+DeepSeek Harness's sidebar supports drag-to-reorder **within** a workspace, but dropping a session onto **another workspace** is silently ignored. This plugin adds cross-workspace migration:
 
-- **🖱️ Drag & drop**: Drag any idle session row onto a target workspace title row; a confirmation dialog shows the destination path—one click to move
-- **📦 Bulk move**: Ctrl/Shift+click to multi-select rows (plugin-built selection with a live count badge), then drag any picked row to move the whole set; or use a workspace header's "…" menu → "Move whole group…". Up to 50 per batch with independent per-session backup/rollback
-- **🚚 True move**: Physically relocates the original `session.jsonl.zstd` archive, rewrites the header `cwd`, and updates the workspace registry—the session id and full history are **preserved as-is**, with no duplicates, no context re-injection, and **zero token cost**
-- **🏠 Move-home wizard**: After a project folder was moved or renamed on disk, redirect the stale workspace **in place** to its new location with one click—workspace id, title, order and archive flags all preserved; every session under it, including stranded ones on the old path, migrates as-is in one batch. Running sessions skip automatically; an interrupted run resumes with only what remains.
-- **🛟 Orphan session rescue** (Settings → "Session Rescue" panel): Scans all session archives on disk and sorts them into—
-  - **Orphaned**: sessions whose cwd broke after their project folder was moved/renamed/deleted, so they "disappeared" from the sidebar (community fix for discussion #3012); one click moves them for real into any existing workspace
-  - **Unregistered**: sessions with a valid cwd that were never registered by any workspace (bootstrap runs once, agent-internal forks don't register); attach them in place
-  - **Misfiled**: sessions whose real folder belongs to group B but that are recorded under group A (clone-style movers, groups recreated after a folder rename); the matching group is identified automatically — home them one by one or all at once, bookkeeping only, files untouched
-  - **Archived sessions**: sessions hidden by the official archive action with no way back from the UI are listed under their owning group; restore to the original group in one click or into another group, and misfiled ones carry a homing suggestion
-  - **Ghosts**: ids present in the registry whose archives are missing on disk (read-only notice)
-  - All go through the same backup + rollback pipeline
-- **🧹 Group merge**: move a whole group into a target via the header's "…" menu, then delete the emptied source group right away — a merge in two commands
-- **🗂️ Empty group cleanup**: the rescue panel lists only truly zero-member workspaces (archived sessions and ghost roster entries count as members, so this never misreports); delete one or all — only the registration is removed, no session is touched
-- **🗑️ Session recycle bin**: move anomalous or archived sessions into the recycle bin from the rescue panel — files, title, membership and archive state are kept whole; restore to the original spot or any other group at any time; purging requires an explicit confirmation
-- **💾 Backup management**: the byte-level backups that every move already creates are finally visible — grouped per session with copy count, footprint and date span; one-click restore (header round-trip verified before accounting) or per-session cleanup
-- **📂 Open folder**: a one-click entry in the header's "…" menu opens the group's directory in the system file manager
-- **⏪ Move history & undo**: Keeps the last 100 cross-workspace moves; bulk moves aggregate into one entry with whole-set undo, and undo generates its own backup with rollback protection
-- **🧾 Task center + 🛡️ Data protection**: bulk moves persist per-item state (done/failed, last error and attempt time) with one-click retry; recycle bin and backup counts / footprint summarized, time-based cleanup previews freed space before running
-- **🔒 Concurrency guards + error codes**: concurrent operations on the same session / target workspace report "busy" immediately instead of queueing or trampling each other (backup-first transaction order means a failed backup changes nothing); every RPC error carries a stable machine-readable code; "rollback also failed" paths write a recovery record surfaced as a red panel row — session files and backups always stay in place
-- **✅ Post-move verification + one-click repair**: every relocation is read back and confirmed (id + cwd) before it counts — mismatches roll back wholesale; the rescue panel's "Fix all" runs every auto-fixable item in one pass (per-item isolation, three-state report), and all lists filter instantly by title / id / path
-- **🏷️ Session titles first**: Confirmation dialogs, rescue lists, and recent moves show session titles when available, falling back to "Untitled session"
-
-## 🔬 Technical Notes
-
-1. **Resident-session consistency fix**: Opened sessions keep a frozen header and a persisted write cache in host memory. Moving the files directly would make such a session **write new events back to the old path** on its next turn, forking history—after moving, this plugin clears the stale write state and refreshes registry indexes so the host transparently re-takes over from the new location.
-2. **Safety net**: A byte-level backup is forced before every move; if rewriting, relocating, or bookkeeping fails at any step, everything rolls back automatically.
-3. **Windows hardening**: Renaming a directory right after a rename inside it can fail transiently with EPERM—retries with exponential backoff, then degrades to copy+delete.
-4. **Theme-aware UI**: Confirmations/toasts use only official `--dsw-alias-*` design tokens and follow the appearance setting instantly.
-5. **Zero dependencies, no build**: Zero npm dependencies on the host half; the client half ships source-as-product, so there is no build-artifact drift.
+- **🖱️ Drag-and-drop move**: drag an idle session row onto a target workspace title row and confirm
+- **📦 Bulk move / group merge**: multi-select with Ctrl/Shift and drag the set, or use a workspace header's "⋯" → "Move whole group…"; an emptied source group can be deleted in one confirmation (up to 50 per batch, failures isolated)
+- **🚚 True move · zero tokens**: session id and full history are preserved as-is — no duplicates, no context re-injection
+- **🏠 Move-home wizard**: after a project folder was moved or renamed, re-point the broken workspace in place; id, title, order, and archive flags stay, and member sessions plus strays migrate together
+- **🛟 Session rescue** (Settings → Session Rescue): recover lost / unregistered / misfiled sessions; restore archived sessions; one-click repair and filtering
+- **🗑️ Recycle bin and backups**: deletes go to the recycle bin first and can be restored; every move creates a backup you can restore or clean up
+- **⏪ Move history and undo**: last 100 cross-workspace moves; bulk operations aggregate into one undoable entry
+- **📂 Empty-group cleanup / open folder**: only truly empty workspaces are listed; open a group directory in your file manager
 
 ## 🚀 Install
 
 ```bash
 dsh plugin --profile web add "github:PianoPrince/dsh-workspace-mover"
-# restart dsh web once
+# Restart dsh web once
 ```
 
-> **No build approval needed**: The plugin is pure JavaScript shipped as-is (no TypeScript, no build step), so installing from GitHub does **not** require the `allowBuilds` approval—pnpm executes no install-time scripts.
+> **Zero-build install**: pure JavaScript source-as-product (no TypeScript, no build step). Installing from GitHub does **not** require `allowBuilds`.
 
 <details>
 <summary><b>npm channel</b></summary>
@@ -88,246 +76,154 @@ dsh plugin --profile web add dsh-workspace-mover
 <summary><b>Local development install</b></summary>
 
 ```bash
-dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
+dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 ```
 
 </details>
 
 <details>
-<summary><b>FAQ</b></summary>
+<summary><b>Troubleshooting</b></summary>
 
-| Symptom | Cause and fix |
+| Symptom | What to do |
 |---|---|
-| Nothing happens when dragging | Only dropping a session row onto a **workspace title row** in grouped view triggers a move; flat list view has no title rows and this plugin stays inactive there |
-| Toast says the session is running | The host validates turn state; wait for the session's current turn to finish, then drag again |
-| Move failed toast | Every move is backed up byte-for-byte beforehand and rolled back on failure; follow the toast guidance and retry—details appear as `MOVE FAILED` entries in the host log |
-| Move succeeded but the sidebar didn't settle | The plugin re-fetches the workspace baseline after moving; if it ever fails to settle, reload the page |
-| Some sessions vanished from the sidebar | Open **Settings → Session Rescue**; it scans automatically and can recover orphaned, unregistered, and misfiled sessions in one click |
+| Drag does nothing | Use **grouped view** and drop on a **workspace title row**; flat list view has no title rows and stays inactive |
+| Session is running | Wait for the current turn to finish, then move |
+| Move failed toast | There is a backup and automatic rollback; retry after following the toast. Details are in the host log under `MOVE FAILED` |
+| Move succeeded but sidebar didn't regroup | Refresh the page |
+| Some sessions vanished from the sidebar | Open **Settings → Session Rescue** to scan and recover them |
 
 </details>
 
 ## 🖼️ Tour
 
-> Real UI captures (click to enlarge).
+> Real UI screenshots (click to enlarge).
 
 ### Drag across workspaces
 
 | | |
 |---|---|
-| **Drag an idle session row onto the target workspace title row; a dashed highlight appears** | **The confirmation dialog shows the destination path—one click to move** |
-| ![Dragging a session to another workspace](docs/media/drag_session_to_another_workspace.png) | ![Cross-workspace move confirmation](docs/media/confirm_popup.png) |
-| **Settings → Session Rescue: recover orphaned and unregistered sessions** | |
+| **Drag an idle session row onto a target workspace title row** | **Confirm dialog shows the destination path** |
+| ![Drag a session to another workspace](docs/media/drag_session_to_another_workspace.png) | ![Cross-workspace confirm dialog](docs/media/confirm_popup.png) |
+| **Settings → Session Rescue** | |
 | ![Session rescue settings panel](docs/media/setting_dialogue_repair.png) | |
 
-### Bulk move · multi-select drag
+### Bulk move · multi-select
 
 | |
 |---|
-| **Ctrl+click to pick sessions (the currently open one is included automatically); a count badge appears bottom-left. Drag onto a target workspace title row to move them all; Esc clears** |
-| ![Bulk move selection: three sessions highlighted, count badge bottom-left](docs/media/batch_move_selection.png) |
-| **"Move whole group…" in a header's "…" menu: move the set, then delete the emptied source group (a merge)** |
-| ![Move whole group entry in the workspace header menu](docs/media/workspace_move.png) |
+| **Ctrl+click to multi-select (the open session is included automatically), count badge bottom-left; drag any selected row; Esc clears** |
+| ![Bulk multi-select with count badge](docs/media/batch_move_selection.png) |
+| **Header "⋯" → "Move whole group…" for group merge** |
+| ![Whole-group move entry](docs/media/workspace_move.png) |
 
-### Move-home wizard · full field run
+### Move-home wizard · walkthrough
 
-A complete record of a real repair: the `Test1` folder was renamed to `Test2` on disk, then the wizard restored the workspace in place.
+A real rename: folder `Test1` → `Test2`, then repair the workspace in place.
 
 | | |
 |---|---|
-| **Before: the `Test1` group works normally** | **After the rename the sidebar still shows the old group (folder gone from disk)** |
+| **Before rename** | **After rename (folder gone on disk)** |
 | ![Workspace before rename](docs/media/original_workspace.png) | ![Workspace after rename](docs/media/workspace_after_rename.png) |
-| **Settings → Session Repair: health check flags the group, type the new path** | **The confirmation dialog shows old → new path and how many sessions will migrate** |
-| ![Workspace examination panel](docs/media/workspace_examination.png) | ![Move-home confirmation popup](docs/media/remove_popup.png) |
-| **Done: the group is renamed Test2 in place; sessions and history intact** | |
+| **Health panel marks the path invalid** | **Confirm old → new path and session count** |
+| ![Workspace health panel](docs/media/workspace_examination.png) | ![Move-home confirm dialog](docs/media/remove_popup.png) |
+| **Done: group renamed to Test2, history intact** | |
 | ![Workspace after move](docs/media/workspace_after_move.png) | |
 
 ## ⌨️ Usage
 
 ### Drag across workspaces
 
-1. After restarting, hold any idle session row in the sidebar's **grouped view**;
-2. Drop it on the target workspace's title row (a dashed highlight appears);
-3. The confirmation dialog shows the target path → click "Move";
-4. A toast confirms completion; if the host broadcast doesn't trigger a refresh, reload the page manually.
+1. After restart, open **grouped view** in the sidebar and hold an idle session row;
+2. Drop it on a target workspace title row;
+3. Confirm the destination path → **Move**;
+4. Toast confirms; refresh the page if the sidebar does not regroup automatically.
 
-Running sessions are rejected (host-side validation), and failed moves roll back automatically with the reason shown in a toast.
+Mid-turn sessions are rejected; failed moves roll back automatically.
 
 ### Session rescue panel
 
-1. After restarting, open **Settings → Session Rescue**; the panel scans automatically;
-2. **Orphaned** rows: pick a target workspace → click "Move here" (true move, id preserved);
-3. **Unregistered** rows: click "Attach" to register them with the workspace matching their path;
-4. **Misfiled** rows: shown as "current group → correct group"; click "Home" or "Home all" to fix the bookkeeping instantly (files untouched);
-5. **Fix all**: runs every auto-fixable item in one pass (misfiled homing, unregistered attach — each isolated on failure); orphans and damaged archives are skipped with a stated reason;
-6. **Filter box**: instantly narrow every list by title / session id / path / group;
-7. **Archived / Recycle bin / Backups**: restore archived sessions in one click; deleted sessions land in the recycle bin — restore to the original spot or any group, purge after confirmation; the byte-level backups created by every move are grouped per session, restorable or cleanable;
-8. Every operation is bracketed by backup and rollback protection, reported as fixed / skipped / failed.
+1. **Settings → Session Rescue** scans on open;
+2. **Lost / orphaned**: pick a target workspace → **Move**;
+3. **Unregistered**: **Attach** in place to the matching workspace;
+4. **Misfiled**: **Home** or **Home all**;
+5. **One-click repair** runs fixable items with per-item isolation;
+6. Filter by title / session id / path / group;
+7. **Archived / recycle bin / backups**: restore archived sessions; restore or purge deleted sessions; restore or clean backups.
 
 ### Bulk move
 
-1. **Ctrl/Cmd+click** sidebar rows to toggle selection (**Shift+click** extends within a group); a corner badge tracks the count, **Esc** clears;
-2. Drag any picked row onto the target workspace title row; the confirmation shows the batch size → click "Move all";
-3. Or use a workspace header's **"…" menu → "Move whole group…"** to move the group; if that empties the source group, you can delete it right after (a merge in two commands);
-4. Every session is backed up and rolled back independently—one failure (e.g. running) never blocks the rest; the toast summarizes moved vs skipped.
+1. **Ctrl/Cmd+click** to select, **Shift+click** for a range, **Esc** to clear;
+2. Drag any selected row → **Move all**;
+3. Or **"⋯" → "Move whole group…"**; delete an emptied source group to merge.
 
 ### Move-home wizard
 
-1. Once a folder was moved or renamed, the **Workspace health** block at the top of the panel flags the matching group as missing;
-2. Type the folder's current full path into that row's input and press "Move home";
-3. The confirmation dialog shows old path → new path plus how many sessions will migrate; confirm to run;
-4. Accounted sessions travel over together with stranded strays from the old path. Running sessions skip this round — repeat later with the same inputs to pick up only what remains.
+1. After a folder move/rename, health check marks the group **path invalid**;
+2. Enter the folder's current full path → **Move**;
+3. Confirm paths and session count; running sessions skip — rerun to finish the rest.
 
-## 🔌 DSH Integration
+## 🔌 How it integrates with DSH
 
-- **Host half** (`lib/index.js`, zero npm deps): mounted via a standard `insert` row in `cordis.patch.yml`; registers a logical channel through `ctx.connection.rpc.handle('/workspace-mover', …)` with endpoints `mover.status / mover.workspaces / mover.move / mover.moveMany / mover.scan / mover.repair / mover.repairAll / mover.history / mover.undo / mover.ws.audit / mover.repoint / mover.archived / mover.unarchive / mover.openFolder / mover.session.delete / mover.trash.list / mover.trash.restore / mover.trash.purge / mover.backups.list / mover.backups.restore / mover.backups.deleteOne`; failure details land in the host log (`MOVE FAILED`).
-- **Move algorithm**:
-  1. Running-state check: only sessions mid-turn are rejected (`agents.get(id)?.status === 'running'`, same predicate as the host UI's badge); sessions resident in memory but idle may be moved;
-  2. Reads the authoritative session header from disk and verifies target ≠ source;
-  3. Byte-level backup into `$DSH_HOME/workspace-mover/backups/` (rolling 20 per session);
-  4. Rewrites only the first frame (header cwd) and keeps all other frames intact; published via temp file + atomic rename;
-  5. Moves the session directory wholesale (Windows dir-rename quirk: exponential-backoff retries, falling back to copy+delete);
-  6. In-memory consistency closeout: invalidates three registry indexes and clears stale resident write state; before official `attachSession`, the live header `cwd` is retargeted so the host emits the destination workspace change;
-  7. Calls the target entity's `attachSession` to persist bookkeeping, after the source entity has already detached;
-  8. Any failing step rolls back automatically: restore index snapshots → return the original to its source directory → reattach to the source workspace.
-- **Client half** (`client/client.js`, build-free source-as-product): locates rows purely by ARIA semantic attributes (session rows `[aria-selected]`, workspace title rows `[aria-expanded]`) and never touches CSS-module hash class names; it intercepts only cross-group drops, leaving official same-group sorting untouched. After a successful move it relies on the official workspace change event for immediate sidebar regrouping, with a page reload as the fallback.
-- **Rescue panel**: registers a settings-page column through the official `settings.section` slot, using RPC endpoints `mover.scan` (classified scan) and `mover.repair` (batched attach/relink, where relink reuses the same move pipeline).
-- **Move history**: stored at `$DSH_HOME/workspace-mover/history.json`, capped at the last 100 entries; undo goes straight back while the original workspace still exists, otherwise you are asked to choose a new target group explicitly.
+For users, the integration contract is:
 
-## 🤝 Coexistence with Other Plugins
+1. Mounted through **official DSH extension points** — DSH and dsh-market install files are not modified;
+2. Workspace membership changes use the host's **official interfaces** — no forged persistence data;
+3. Plugin-owned data (history, backups, recycle bin) lives in a **separate data directory**, apart from session archives;
+4. Official same-group sidebar sorting is **left alone** — only cross-workspace drops are handled.
 
-**Built to coexist with the ecosystem by design**; the conflict surface is small:
+Implementation details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-- **Fully namespaced communication**: the RPC occupies a single `/workspace-mover` channel and registers no HTTP routes; the panel lives in the official `settings.section` slot (the slot system supports multiple plugins by design); CSS classes `wsm-*` and DOM attributes `data-wsm-*` are all privately namespaced;
-- **Not a single byte of the official bundles is patched** — only event listeners and slot injections (unlike the few plugins that patch official bundles, which are the real hazard class);
-- **All host writes go through official channels** (registry `mutate` / `attachSession` / `detachSession`, durable domain state) with no private data shapes — other plugins always read official-shaped data;
-- **Zero npm dependencies**, so no shared-dependency version conflicts.
+## 🤝 Coexistence with other plugins
 
-Compatibility when installed alongside other plugin categories:
+Built to coexist: private communication/style namespaces, no rewrites of official install files, official interfaces for membership writes.
 
 | Plugin category | Compatibility | Notes |
 | --- | --- | --- |
-| Sidebar enhancements / better-sidebar / terminals / cost meters / memory / export & share | ✅ No conflict | Entirely different panels and data surfaces |
-| Archive managers | ✅ Compatible | Both read and write the official archive set; data stays consistent (panel features may overlap) |
-| Sort / pin plugins | ⚠️ Mostly compatible | This plugin re-sorts "Recently updated" precisely after moves; pin/sort plugins maintain their own collections — coexistence is fine, only their panels may show a slightly different order |
-| Plugins that redraw the sidebar (custom workspace trees) | ⚠️ Graceful degradation | If another plugin replaces the official workspace DOM, the ARIA-semantic selectors may not find rows — features silently stop triggering, but **no data is ever damaged** |
-| Other session movers | ❌ Pick one | Same-category plugins also intercept drag drops at the document level; installing both can double-handle a single drag. This plugin already covers move / bulk / merge / homing / archive restore — no need to install two |
+| Sidebar enhancements / better-sidebar / terminals / cost meters / memory / export & share | ✅ No conflict | Different panels and data surfaces |
+| Archive managers | ✅ Compatible | Both use official archive data; panel features may overlap |
+| Sort / pin plugins | ⚠️ Mostly compatible | Moves re-sort "Recently updated" precisely; display order in other plugins may differ slightly |
+| Plugins that redraw the sidebar | ⚠️ Graceful degradation | If the official sidebar structure is replaced, features may stop triggering — **no data damage** |
+| Other session movers | ❌ Pick one | Two drag interceptors can double-handle one drag; this plugin covers move / bulk / merge / homing / archive restore |
 
-**DSH version sensitivities** (not plugin conflicts): unarchive writes through the registry's durable state channel and reports clearly on hosts that lack it rather than erroring; projection-cache titles are parsed defensively against the v3 shape and fall back to the on-disk header if the file is missing.
+## 🧩 Compatibility and uninstall
 
-## 🆕 Recent Updates
+- **Verified**: DeepSeek Harness `0.1.5-rc.1`, dsh-market `1.45.1`, Node.js `≥ 22`. Does not patch DSH source; official extension points only.
+- **Marketplace "host requirement unknown"**: GitHub-only packages without an npm manifest may show unknown — that is metadata, not runtime incompatibility. `package.json` declares `engines.dsh` ≥ `0.1.5-rc.1`.
+- **Uninstall is reversible**: removing the plugin does not delete session archives, workspaces, or official bookkeeping. Plugin history/tasks/backups/recycle-bin data stay in the plugin data directory (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)); refresh or restart DSH to clear injected UI.
+- **Coexistence**: do not enable a second cross-workspace drag mover; other categories can follow the table above.
+
+Some advanced actions need newer DSH capabilities; when unavailable the UI says so instead of failing silently.
+
+## 🔐 Security guarantees
+
+- **Automatic backup before every move**; after landing, the session identity and path are re-checked — mismatch rolls the whole move back;
+- **On failure, restore to the pre-move state** (files and bookkeeping together);
+- **Deletes go to the recycle bin first** and can be restored to the original spot or any group; permanent delete needs a second confirmation;
+- **If automatic recovery is not possible**, the rescue panel flags it for manual review; session files and backups are kept — **never silently discarded**;
+- **Recently opened sessions still resident in Harness memory** cannot be deleted until you restart Harness (the UI says so clearly).
+
+> Failure paths prefer keeping your data — sessions are never silently dropped.  
+> This is **not** a claim that every error auto-recovers: extreme cases need manual action, with data left in place.
+
+## ⚠️ Known limitations
+
+- Moving into the "Ungrouped" bucket is not supported;
+- Sessions still resident in Harness memory (opened recently) cannot be deleted until you restart Harness;
+- If a third-party plugin fully redraws the sidebar, features may stop triggering (**no data damage**);
+- Flat list view has no workspace title rows — the plugin stays inactive there;
+- Major host upgrades that change internal structures may degrade some actions or require a restart; the move-home wizard aborts before touching files if it cannot write safely.
+
+## 🆕 Recent version
 
 ### v2.0.1 · 2026-09-12
 
-- Compatible with DeepSeek Harness 0.1.5: selects the highest official v3 session artifact and supports both `.jsonl` and `.jsonl.zstd`; mixed encodings are rejected explicitly.
-- Fixes RPC mounting during the 0.1.5 startup sequence and strengthens concurrent move protection.
-- Keeps workspace moving, recycle-bin, task-center, and backup-recovery features available.
-- Releases include a `.tgz` installation asset.
-- 95 tests pass.
+- Compatible with DeepSeek Harness 0.1.5 session archive naming and compression (`.jsonl` / `.jsonl.zstd`; mixed encodings are rejected)
+- Fixes plugin mounting during the 0.1.5 startup sequence and strengthens concurrency protection
+- Workspace move, recycle bin, task center, and backup recovery remain available
+- Releases include a `.tgz` install asset
 
-See [CHANGELOG.md](CHANGELOG.md) for the full change history.
-
-### v1.4.0 · 2026-09-06
-
-- Concurrency guards: concurrent operations on the same session / target workspace return "busy" immediately — never queued, never deadlocked; bulk moves are de-duplicated so a batch cannot race itself
-- Error-code protocol: every RPC error carries a stable machine-readable code (busy / conflict / not-found / rollback-failed …); the client reacts to codes instead of matching English message text
-- Recovery ledger: extreme "rollback also failed" paths write a durable recovery record, surfaced as a red "needs manual recovery" row in the rescue panel (session files and backups always remain in place — never auto-deleted)
-- Capability report: `mover.status` enumerates detected official services and degraded features for painless support
-- Transaction ordering: the byte-level backup now happens before every side effect — a backup failure aborts with zero changes to accounting, files, or indexes
-
-### v1.3.0 · 2026-09-05
-
-- Data protection summary and time-based cleanup: recycle bin and backup counts / footprint at a glance; "clean data older than 30 days" previews the freed space before asking for confirmation
-
-### v1.2.0 · 2026-09-05
-
-- Migration task center: bulk moves are persisted per session (done / failed, last error and attempt time); failed items retry in one click — from each session's CURRENT location, never a stale recorded path; clearing a record never touches moved sessions
-
-### v1.0.0 · 2026-09-05
-
-- Post-move consistency verification: every relocation (single, bulk, and workspace re-point) reads the archive back and requires id + cwd to match before counting as done — mismatches roll the whole move back
-- One-click repair: fixable items (misfiled homing, unregistered attach) run in one pass with per-item isolation; orphans and damaged archives are skipped with stated reasons, reported as fixed / skipped / failed
-- Panel filter: instantly narrow every rescue list by title / session id / path / group, with per-section shown/total counts
-
-### v0.9.0 · 2026-09-05
-
-- Session recycle bin: the rescue panel's rows gain "Delete" — sessions move into the recycle bin whole (files, title, membership, archive state), restored to the original spot or any group in one click, purged only after confirmation
-- Backup management: the byte-level backups created by every move are finally visible — grouped per session with copy count / footprint / date span, one-click restore (header round-trip verified before accounting) or per-session deletion
-- Deletion is a four-way cleanup: files, workspace accounting, projection cache and registry indexes in one pass — no ghosts left behind
-
-### v0.8.0 · 2026-09-05
-
-- Archived session management: the rescue panel gains an "Archived sessions" block — sessions hidden by the official archive action are listed under their owning group, restored to the original group in one click, or moved to another group via "Restore to…" with full move protection; misfiled archived sessions carry a homing suggestion
-- Empty group detection and cleanup: only truly zero-member workspaces are listed (archived sessions and ghost roster entries count as members, so this never misreports); delete one or all
-- The workspace "…" menu gains "Open folder": jump to the group's directory in the system file manager
-
-### v0.7.0 · 2026-08-28
-
-- Session Rescue gains "Misfiled" detection: sessions whose real folder belongs to group B while recorded under group A are listed with their matching group — home them one by one or all at once, bookkeeping only
-- Group merge: the header "…" menu gains a "Move whole group…" entry; once the source group is emptied by the move, it can be deleted in one confirmation
-- The scan summary and panel blocks surface misfiled counts
-
-### v0.6.3 · 2026-08-28
-
-- Sessions settle into their exact "Recently updated" position automatically after a move — no need to toggle the sort option
-- Row-to-session identification now reads the session id carried by the row element itself: hidden and archived members never affect multi-select or move accuracy
-- New field screenshot of bulk multi-select
-
-### v0.6.2 · 2026-08-28
-
-- Undo / attach / relink in the settings panel refresh the sidebar immediately, so sessions land in their target group at once
-- Starting a multi-select with Ctrl+click automatically includes the currently open session: with A open, Ctrl+clicking B selects {A, B} in one step
-
-### v0.6.1 · 2026-08-28
-
-- Bulk moves aggregate into a single "Recent moves" entry and undo the whole set in one click
-- A plain click on a session row leaves multi-select; Esc clears it at any time
-
-### v0.6.0 · 2026-08-28
-
-- Bulk move: plugin-built sidebar multi-select (Ctrl/Shift+click, Esc to clear, count badge) — drag any picked row to move the whole set; a workspace header's "…" menu moves an entire group
-- New `mover.moveMany` endpoint: up to 50 per batch, reusing the single-move pipeline — independent per-session backup/rollback, error isolation, and move history entries (undoable)
-- Tests 27 → 30 cases
-
-### v0.5.1 · 2026-08-27
-
-- Move-home syncs the workspace title to the new folder name (custom titles are kept)
-- After a move, `@` file references point at the new location immediately — no restart needed
-- Cold starts keep serving cached session titles, so lists stay stable
-- Tests 24 → 27 cases
-
-### v0.5.0 · 2026-08-27
-
-- Move-home wizard: the health panel flags groups whose folder went missing; one click re-points the stale workspace in place—workspace id, title, order and archive flags all preserved—through the entity's unified `mutate` channel (registry indexes pre-seeded first so no member is pruned)
-- Batch migration of member sessions plus stranded strays from the old path: per-file backup/rollback and resident write-state cleanup; running sessions skip automatically and interrupted runs resume with the same inputs
-- New endpoints `mover.ws.audit` / `mover.repoint` (18 → 24 cases)
-
-### v0.4.0 · 2026-08-26
-
-- Move history and one-click undo: keeps the last 100 cross-workspace moves (`mover.history` / `mover.undo` endpoints), moves sessions back to their original group from Settings, with undo covered by the same backup and rollback protection
-- Confirmation dialogs, rescue lists, and move records now prefer session titles
-
-### v0.3.2
-
-- Orphan session rescue: full-disk scan, true migration for orphaned sessions, in-place attachment for unregistered ones—all protected by rollback
-
-## 🔐 Security
-
-- Forced backup before every move; post-move read-back verification (id + cwd must match, otherwise the whole move rolls back); automatic rollback if attaching fails (restore index snapshot → restore bytes + clean target → reattach to the source workspace);
-- Deletion goes to the recycle bin: the physical move happens first, so a failed delete changes nothing; the manifest records everything needed to restore; purging requires an explicit confirmation;
-- Sessions still resident in harness memory refuse deletion (their live objects would zombie-recreate files) and get an actionable toast instead;
-- Only sessions mid-turn are rejected by default; idle resident sessions get their write-path ownership fixed after moving, preventing history forks;
-- All registry/persistence internals are wrapped in try/catch—on failure the plugin degrades to functional-with-a-restart-hint instead of breaking;
-- Compatibility targets: Node ≥ 22, dsh 0.1.5-rc.1; core pure functions and end-to-end sandbox tests ship via `npm test` (95 cases covering rollback paths, rescue scan/repair, history undo, workspace repoint, post-move verification, recycle bin and backup restore, task center, data-protection cleanup, concurrency locks and the error-code protocol).
-- Session artifacts follow DSH 0.1.5 v3 naming: `session.v3.jsonl.zstd` or `session.v3.jsonl`; mixed compression encodings in one persistence root are rejected explicitly.
-
-## ⚠️ Known Limitations
-
-- Moving sessions into the "Ungrouped" bucket is not supported;
-- Sessions still resident in harness memory (opened recently) cannot be deleted directly. Archiving only hides a session; it does not unload the Harness object, so the object may recreate the file even after focus moves elsewhere. DSH 0.1.5 exposes no public unload-by-ID API; restart the harness to release it, then delete it again.
-- Row → session identification reads the id carried by the row element itself (React props), with render-order alignment only as a fallback; if a third-party plugin replaces the sidebar DOM so the ARIA selectors no longer match, the affected features silently stop (no data is ever damaged);
-- Flat list view has no workspace title rows, so the plugin stays inactive there;
-- If a host upgrade changes registry cache field names or entity shapes, affected steps degrade gracefully (the feature still works; ownership refresh may need a restart); unarchive requires the registry's durable state channel and reports clearly when it is unavailable;
-- The workspace re-point wizard relies on the entity's unified `mutate` channel; if a host change makes it unavailable, the wizard aborts before touching the first file with a clear message.
+Full history: [CHANGELOG.md](CHANGELOG.md).  
+Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## License
 
