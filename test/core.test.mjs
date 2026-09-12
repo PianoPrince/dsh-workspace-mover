@@ -3,7 +3,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { zstdCompressSync, constants } from 'node:zlib';
-import { scanFrames, readHeader, rewriteHeaderCwd } from '../lib/index.js';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { scanFrames, readHeader, rewriteHeaderCwd, generationLogFilename, parseGenerationLogFilename, findHighestArtifact, artifactPath, sessionDir } from '../lib/index.js';
 
 const OPTS = { params: { [constants.ZSTD_c_checksumFlag]: 1 } };
 
@@ -47,4 +50,75 @@ test('损坏档案被拒绝而不是静默通过', () => {
   const buf = makeArtifact({ type: 'session', id: 's', cwd: 'x' }, []);
   buf.writeUInt32LE(0x12345678, 8); // 破坏第一帧内部
   assert.throws(() => readHeader(buf));
+});
+
+test('readHeader and rewriteHeaderCwd support uncompressed JSONL', () => {
+  const original = Buffer.from(
+    JSON.stringify({ type: 'session', id: 'session-raw', cwd: 'E:\\old' }) + '\n' +
+    JSON.stringify({ seq: 1, text: 'raw event' }) + '\n',
+    'utf8'
+  );
+  assert.equal(readHeader(original, 'none').cwd, 'E:\\old');
+  const rewritten = rewriteHeaderCwd(original, 'E:\\new', 'none');
+  assert.equal(readHeader(rewritten, 'none').cwd, 'E:\\new');
+  const secondLine = rewritten.indexOf(0x0a) + 1;
+  assert.equal(rewritten.subarray(secondLine).toString('utf8'), JSON.stringify({ seq: 1, text: 'raw event' }) + '\n');
+});
+
+
+test('generationLogFilename prefers v3 zstd names', () => {
+  assert.equal(generationLogFilename(0, 'zstd'), 'session.jsonl.zstd');
+  assert.equal(generationLogFilename(3, 'zstd'), 'session.v3.jsonl.zstd');
+  assert.equal(parseGenerationLogFilename('session.jsonl.zstd')?.version, 0);
+  assert.equal(parseGenerationLogFilename('session.v3.jsonl.zstd')?.version, 3);
+  assert.equal(parseGenerationLogFilename('session.migration.tmp.jsonl.zstd'), null);
+});
+
+test('findHighestArtifact picks the newest canonical generation', () => {
+  const root = mkdtempSync(join(tmpdir(), 'wsm-gen-'));
+  try {
+    const dir = join(root, 'sess');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'session.jsonl.zstd'), Buffer.from('old'));
+    writeFileSync(join(dir, 'session.v2.jsonl.zstd'), Buffer.from('mid'));
+    writeFileSync(join(dir, 'session.v3.jsonl.zstd'), Buffer.from('new'));
+    writeFileSync(join(dir, 'session.migration.abc.jsonl.zstd'), Buffer.from('tmp'));
+    const found = findHighestArtifact(dir);
+    assert.equal(found?.version, 3);
+    assert.equal(found?.name, 'session.v3.jsonl.zstd');
+    assert.equal(artifactPath(root, 'E:\\proj', 'session-x'), join(sessionDir(root, 'E:\\proj', 'session-x'), 'session.v3.jsonl.zstd'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('findHighestArtifact supports the official uncompressed encoding', () => {
+  const root = mkdtempSync(join(tmpdir(), 'wsm-raw-'));
+  try {
+    const dir = join(root, 'sess');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'session.v3.jsonl'), Buffer.from('{"type":"session"}\n'));
+    const found = findHighestArtifact(dir, 'none');
+    assert.equal(found?.name, 'session.v3.jsonl');
+    assert.equal(artifactPath(root, 'E:\\proj', 'session-x', 'none'), join(sessionDir(root, 'E:\\proj', 'session-x'), 'session.v3.jsonl'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('mixed session compression encodings are rejected explicitly', () => {
+  const root = mkdtempSync(join(tmpdir(), 'wsm-mixed-'));
+  try {
+    const dir = join(root, 'sess');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'session.v3.jsonl'), Buffer.from('{}\n'));
+    writeFileSync(join(dir, 'session.v3.jsonl.zstd'), Buffer.from('not-zstd'));
+    assert.throws(() => findHighestArtifact(dir, 'zstd'), (err) => {
+      assert.equal(err.code, 'unsupported');
+      assert.match(err.message, /mixed session compression encodings/);
+      return true;
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

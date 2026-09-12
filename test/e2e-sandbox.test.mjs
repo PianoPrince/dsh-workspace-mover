@@ -15,7 +15,7 @@ const DEAD = 'E:\\wsm-dead-path'; // 刻意不存在的路径（孤儿分类用�
 let A; // 每次用例指向真实临时目录（健康会话要求 cwd 在磁盘上存在）
 let B;
 let root;
-let ctx, entityA, entityB, sharedIndex;
+let ctx, entityA, entityB, sharedIndex, workspaceEvents;
 
 /** 测试根目录：优先 WSM_TEST_ROOT（受限环境下 Temp 可能禁止目录重命名），否则退回系统 Temp。 */
 function makeRoot() {
@@ -66,25 +66,28 @@ function makeEntity(id, path, hostRef) {
     },
     async attachSession(sid) {
       if (this.failAttach) throw new Error('simulated attach failure');
-      if (!record.sessionIds.includes(sid)) {
-        // 官方语义：未记账 id 需通过「头部 cwd 规范化后 === path」校验，
-        // 并经 rememberSessionPath 回填三张索引后才挂账
-        const header = readHeader(readFileSync(findArtifact(sid)));
-        let canonical;
-        try { canonical = realpathSync(header.cwd); } catch {
-          throw new Error(`cwd does not resolve: '${header.cwd}'`);
-        }
-        if (canonical.toLowerCase() !== record.path.toLowerCase()) throw new Error(`cwd resolves elsewhere: '${header.cwd}'`);
-        sharedIndex.headers.set(String(sid), header);
-        sharedIndex.sessionPaths.set(String(sid), canonical);
-        sharedIndex.invalidSessionPaths.delete(String(sid));
+      // 官方语义：已记账时 attach 是 no-op，mutate 不发 domain/changed。
+      if (record.sessionIds.includes(sid)) return;
+      // 官方语义：未记账 id 需通过「头部 cwd 规范化后 === path」校验，
+      // 并经 rememberSessionPath 回填三张索引后才挂账
+      const header = readHeader(readFileSync(findArtifact(sid)));
+      let canonical;
+      try { canonical = realpathSync(header.cwd); } catch {
+        throw new Error(`cwd does not resolve: '${header.cwd}'`);
       }
+      if (canonical.toLowerCase() !== record.path.toLowerCase()) throw new Error(`cwd resolves elsewhere: '${header.cwd}'`);
+      sharedIndex.headers.set(String(sid), header);
+      sharedIndex.sessionPaths.set(String(sid), canonical);
+      sharedIndex.invalidSessionPaths.delete(String(sid));
       this.attached.push(sid);
       record.sessionIds.unshift(sid);
+      hostRef.onWorkspaceChanged?.(id, record);
     },
     async detachSession(sid) {
+      if (!record.sessionIds.includes(sid)) return;
       this.detached.push(sid);
       record.sessionIds = record.sessionIds.filter((x) => x !== sid);
+      hostRef.onWorkspaceChanged?.(id, record);
     }
   };
 }
@@ -93,8 +96,16 @@ function makeEntity(id, path, hostRef) {
 function findArtifact(sessionId) {
   for (const proj of readdirSync(root)) {
     if (!(proj.startsWith('--') && proj.endsWith('--'))) continue;
-    const candidate = join(root, proj, sessionId, 'session.jsonl.zstd');
-    if (existsSync(candidate)) return candidate;
+    const dir = join(root, proj, sessionId);
+    if (!existsSync(dir)) continue;
+    const names = readdirSync(dir)
+      .filter((name) => name === 'session.jsonl.zstd' || /^session\.v[1-9][0-9]*\.jsonl\.zstd$/.test(name))
+      .sort((a, b) => {
+        const va = a === 'session.jsonl.zstd' ? 0 : Number(/^session\.v([0-9]+)/.exec(a)[1]);
+        const vb = b === 'session.jsonl.zstd' ? 0 : Number(/^session\.v([0-9]+)/.exec(b)[1]);
+        return vb - va;
+      });
+    if (names.length) return join(dir, names[0]);
   }
   throw new Error(`artifact for ${sessionId} not found`);
 }
@@ -119,7 +130,15 @@ beforeEach(() => {
   // 三张内存索引先于实体创建（实体 mutate 的成员剪枝按此判定）；
   // 官方实体持有的是 { sessionPath(id) } 形态的宿主引用
   sharedIndex = { headers: new Map(), sessionPaths: new Map(), invalidSessionPaths: new Map() };
-  const hostRef = { ...sharedIndex, sessionPath: (id) => sharedIndex.sessionPaths.get(String(id)) };
+  workspaceEvents = [];
+  const hostRef = {
+    ...sharedIndex,
+    sessionPath: (id) => sharedIndex.sessionPaths.get(String(id)),
+    onWorkspaceChanged: (workspaceId, record) => workspaceEvents.push({
+      workspaceId,
+      sessionIds: [...record.sessionIds]
+    })
+  };
 
   entityA = makeEntity('wid-a', A, hostRef);
   entityB = makeEntity('wid-b', B, hostRef);
@@ -139,8 +158,15 @@ beforeEach(() => {
         if (!(proj.startsWith('--') && proj.endsWith('--'))) continue;
         const projPath = join(root, proj);
         for (const idDir of readdirSync(projPath)) {
-          const f = join(projPath, idDir, 'session.jsonl.zstd');
-          if (!existsSync(f)) continue;
+          const dir = join(projPath, idDir);
+          const names = existsSync(dir) ? readdirSync(dir).filter((name) => name === 'session.jsonl.zstd' || /^session\.v[1-9][0-9]*\.jsonl\.zstd$/.test(name)) : [];
+          if (!names.length) continue;
+          names.sort((a, b) => {
+            const va = a === 'session.jsonl.zstd' ? 0 : Number(/^session\.v([0-9]+)/.exec(a)[1]);
+            const vb = b === 'session.jsonl.zstd' ? 0 : Number(/^session\.v([0-9]+)/.exec(b)[1]);
+            return vb - va;
+          });
+          const f = join(dir, names[0]);
           try { out.push(readHeader(readFileSync(f))); } catch { /* skip */ }
         }
       }
@@ -205,6 +231,55 @@ test('正常迁移：文件物理搬移 + 头部改写 + 双向记账 + 有备�
   const backups = join(root, 'workspace-mover', 'backups');
   assert.ok(existsSync(backups));
   assert.ok(readdirSync(backups).some((f) => f.startsWith('session-aaa')));
+});
+
+
+test('批量迁移常驻会话通过官方 attach 事件立即更新目标工作区', async () => {
+  apply(ctx);
+  const ids = ['session-aaa', 'session-bbb'];
+  const secondArtifact = artifactPath(root, A, 'session-bbb');
+  mkdirSync(dirname(secondArtifact), { recursive: true });
+  writeFileSync(secondArtifact, makeArtifact({ type: 'session', id: 'session-bbb', cwd: A, title: 'Beta discussion' }));
+  entityA.record.sessionIds.push(...ids);
+  for (const id of ids) {
+    sharedIndex.headers.set(id, { id, cwd: A });
+    sharedIndex.sessionPaths.set(id, A);
+  }
+  const live = new Map(ids.map((id) => [id, {
+    header: Object.freeze({ id, cwd: A })
+  }]));
+  ctx.get = (key) => {
+    if (key === 'sessions') return { get: (id) => live.get(String(id)) };
+    if (key === 'agents') return { get: () => ({ status: 'idle' }) };
+    return undefined;
+  };
+
+  const res = await call('mover.moveMany', {
+    sessions: ids.map((sessionId) => ({ sessionId })),
+    targetWorkspaceId: 'wid-b'
+  });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.movedCount, 2);
+  assert.equal(entityB.record.sessionIds.length, 2);
+  const targetEvents = workspaceEvents.filter((event) => event.workspaceId === 'wid-b');
+  assert.equal(targetEvents.length, 2, 'each official attach emits a target workspace change');
+  assert.deepEqual(new Set(targetEvents.at(-1).sessionIds), new Set(ids));
+});
+
+test('DSH 0.1.5 persistence.list 快照形状可迁移', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  const originalList = ctx.sessionPersistence.list;
+  ctx.sessionPersistence.list = async () => (await originalList.call(ctx.sessionPersistence)).map((header) => ({
+    header,
+    revision: 'test-revision',
+    sizeBytes: 0
+  }));
+
+  const res = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.moved, true);
+  assert.equal(readHeader(readFileSync(artifactPath(root, B, 'session-aaa'))).cwd, B);
 });
 
 test('移动历史：可查询并一键撤回到原工作区', async () => {
@@ -280,7 +355,7 @@ test('attach 失败 → 自动回滚到源目录并重新挂账', async () => {
   assert.ok(entityA.attached.includes('session-aaa'), 're-attached to source');
 });
 
-test('常驻内存但空闲的会话允许迁移：刷新索引 + 预置记账 + 清理持久化状态', async () => {
+test('常驻内存但空闲的会话允许迁移：刷新索引 + 官方 attach 记账 + 清理持久化状态', async () => {
   apply(ctx);
   const staleState = { meta: { cwd: A }, cursor: 1, owner: {} };
   ctx.sessionPersistence.coordinator = { states: new Map([['session-aaa', staleState]]) };
@@ -298,14 +373,14 @@ test('常驻内存但空闲的会话允许迁移：刷新索引 + 预置记账 +
   assert.equal(res.ok, true, JSON.stringify(res));
   assert.ok(!ctx.sessionPersistence.coordinator.states.has('session-aaa'), 'stale state deleted so host re-adopts from disk');
   assert.ok(existsSync(artifactPath(root, B, 'session-aaa')));
-  // 预置记账生效：目标实体持有会话，索引指向新路径
-  assert.ok(entityB.record.sessionIds.includes('session-aaa'), 'pre-seeded membership attached');
+  // 官方 attach 生效：目标实体持有会话，索引指向新路径
+  assert.ok(entityB.record.sessionIds.includes('session-aaa'), 'membership attached through official path');
   assert.equal(entityB.attached.includes('session-aaa'), true, 'attach still called to persist membership');
   assert.equal(ctx.workspaceRegistry.sessionPaths.get('session-aaa'), B, 'sessionPaths points at target');
   assert.equal(ctx.workspaceRegistry.headers.get('session-aaa').cwd, B, 'headers cache refreshed');
 });
 
-test('常驻会话 attach 失败时撤销预置记账并回滚', async () => {
+test('常驻会话 attach 失败时还原 live header 并回滚', async () => {
   apply(ctx);
   entityB.failAttach = true;
   ctx.get = (key) => {
@@ -321,7 +396,7 @@ test('常驻会话 attach 失败时撤销预置记账并回滚', async () => {
   assert.equal(res.ok, false);
   assert.match(res.error.message, /rolled back cleanly/i);
   // 预置已撤销
-  assert.ok(!entityB.record.sessionIds.includes('session-aaa'), 'pre-seed undone');
+  assert.ok(!entityB.record.sessionIds.includes('session-aaa'), 'target membership absent after rollback');
   assert.equal(ctx.workspaceRegistry.sessionPaths.get('session-aaa'), A, 'prior sessionPath restored');
   assert.equal(ctx.workspaceRegistry.headers.get('session-aaa').cwd, A, 'prior header restored');
   // 文件与源记账恢复
@@ -1129,7 +1204,7 @@ test('mover.session.delete：移入回收站并完成四件套清理', async () 
   const recycle = join(root, 'workspace-mover', 'recycle');
   const entries = readdirSync(recycle);
   assert.equal(entries.length, 1);
-  assert.ok(existsSync(join(recycle, entries[0], 'session', 'session.jsonl.zstd')));
+  assert.ok(readdirSync(join(recycle, entries[0], 'session')).some((name) => name === 'session.jsonl.zstd' || /^session\.v[1-9][0-9]*\.jsonl\.zstd$/.test(name)));
   // ② manifest 完整（含投影记录，供还原标题）
   const manifest = JSON.parse(readFileSync(join(recycle, entries[0], 'wsm-manifest.json'), 'utf8'));
   assert.equal(manifest.sessionId, 'session-aaa');
@@ -1710,4 +1785,20 @@ test('v1.4 回滚也失败 → 写 recovery 记录，scan 报告 recoveryCount',
   const scan = await call('mover.scan');
   assert.equal(scan.ok, true);
   assert.equal(scan.value.recoveryCount, 1);
+});
+
+test('mover.session.delete: archived resident idle session still refuses delete', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  ctx.workspaceRegistry.archivedSessionIds = ['session-aaa'];
+  ctx.get = (key) => {
+    if (key === 'sessions') return { get: () => ({ id: 'session-aaa' }) };
+    if (key === 'agents') return { get: () => ({ status: 'idle' }) };
+    return undefined;
+  };
+  const res = await call('mover.session.delete', { sessionId: 'session-aaa' });
+  assert.equal(res.ok, false);
+  assert.match(res.error.message, /resident in memory/);
+  assert.ok(existsSync(artifactPath(root, A, 'session-aaa')), 'artifact untouched');
+  assert.deepEqual(ctx.workspaceRegistry.archivedSessionIds, ['session-aaa']);
 });

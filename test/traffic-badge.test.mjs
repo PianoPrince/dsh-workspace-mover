@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildBadgeFiles, buildState, mergeHistory, normalizeClonesResponse, parseHistory } from '../.github/scripts/traffic-badge-core.mjs';
+import { buildBadgeFiles, buildState, mergeHistory, normalizeClonesResponse, normalizePathsResponse, normalizeReferrersResponse, normalizeViewsResponse, parseHistory } from '../.github/scripts/traffic-badge-core.mjs';
 
 const snapshot = {
 	count: 12,
@@ -18,6 +18,18 @@ test('traffic response uses GitHub clones[] rows and rejects the old days[] shap
 		{ date: '2026-09-09', count: 7, uniques: 4 }
 	]);
 	assert.throws(() => normalizeClonesResponse({ count: 12, uniques: 7, days: snapshot.clones }), /no clones array/);
+});
+
+test('traffic normalizes views, referrers, and popular paths', () => {
+	assert.deepEqual(normalizeViewsResponse({ count: 9, uniques: 4, views: [{ timestamp: '2026-09-09T00:00:00Z', count: 9, uniques: 4 }] }).days, [
+		{ date: '2026-09-09', count: 9, uniques: 4 }
+	]);
+	assert.deepEqual(normalizeReferrersResponse([{ referrer: 'github.com', count: 3, uniques: 2 }]), [
+		{ referrer: 'github.com', count: 3, uniques: 2 }
+	]);
+	assert.deepEqual(normalizePathsResponse([{ path: '/README.md', title: 'README', count: 5, uniques: 3 }]), [
+		{ path: '/README.md', title: 'README', count: 5, uniques: 3 }
+	]);
 });
 
 test('history upsert replaces corrected dates without double counting', () => {

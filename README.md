@@ -21,7 +21,7 @@
     <img alt="一键撤回" src="https://img.shields.io/badge/-一键撤回-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="主题自适应" src="https://img.shields.io/badge/-主题自适应-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="GitHub clones observed" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2FPianoPrince%2Fc14345658550a4a308570acfbaf9d170%2Fraw%2Fwsm-clones-total.json" style="height:20px; margin:0 2px;" />
-    <img alt="Release downloads (shown after 10 downloads)" src="https://gist.githubusercontent.com/PianoPrince/c14345658550a4a308570acfbaf9d170/raw/wsm-release-downloads.svg" style="height:20px; margin:0 2px;" />
+    <!-- release-downloads-badge:start --><!-- release-downloads-badge:end -->
   </p>
 </div>
 
@@ -37,6 +37,7 @@
 - [🖼️ 特性巡礼](#️-特性巡礼)
 - [⌨️ 使用](#️-使用)
 - [🔌 与 DSH 的集成方式](#-与-dsh-的集成方式)
+- [🧩 兼容性与卸载](#-兼容性与卸载)
 - [🤝 与其他插件的共存](#-与其他插件的共存)
 - [🆕 最近更新](#-最近更新)
 - [🔐 安全设计](#-安全设计) · [⚠️ 已知限制](#️-已知限制)
@@ -113,7 +114,7 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 | 拖了但没反应 | 只在「分组视图」把会话行投到**工作区标题行**上才会触发；「扁平列表」视图没有标题行，本插件在该视图不激活 |
 | 提示会话正在运行中 | 宿主端校验回合状态；等该会话回合结束再拖即可 |
 | 移动失败的 toast | 每次操作前都有字节级备份、失败自动回滚；按 toast 说明处理后重试，详细原因见宿主日志中的 `MOVE FAILED` 条目 |
-| 移动成功但侧边栏没归位 | 插件迁移后会主动重拉一次工作区基线；偶发未生效时手动刷新页面 |
+| 移动成功但侧边栏没归位 | 迁移结果通过官方工作区变更事件即时归位；若宿主尚未推送变更帧，手动刷新页面即可 |
 | 有些会话从侧边栏不见了 | 打开 **设置 → 会话救援** 自动扫描，「失联」「未记账」「挂错分组」三类都能一键找回 |
 
 </details>
@@ -198,10 +199,10 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
   3. 原始字节备份到 `$DSH_HOME/workspace-mover/backups/`（每会话保留最近 20 份）；
   4. 仅重写首帧（头部 cwd），其余帧字节级保留；临时文件 + 原子改名发布；
   5. 会话目录整体搬移（Windows 目录改名怪癖：指数退避重试，仍失败退化为复制+删除）；
-  6. 内存一致性收尾：失效注册表三张索引；常驻会话额外清理持久化协调器的陈旧写入状态、刷新索引并预置目标记账（绕开冻结头的旧 cwd 校验）；
+  6. 内存一致性收尾：失效注册表三张索引；常驻会话额外清理持久化协调器的陈旧写入状态，并在官方 `attachSession` 前把 live header 的 `cwd` 切到新路径；
   7. 调用目标实体 `attachSession` 持久化记账，源实体已先行 `detachSession`；
-  8. 任一步失败自动回滚：撤销预置 → 还原索引快照 → 原件放回源目录 → 重新挂回源工作区。
-- **Client 半**（`client/client.js`，免构建 source-as-product）：仅依赖 ARIA 语义属性定位行元素（会话行 `[aria-selected]` / 工作区标题行 `[aria-expanded]`），不碰 CSS-module 哈希类名；只拦截「跨组投放」场景，官方同组排序不受影响。迁移成功后主动重拉一次工作区基线（公开 API），侧边栏分组即时归位。
+  8. 任一步失败自动回滚：还原 live header 与索引快照 → 原件放回源目录 → 重新挂回源工作区。
+- **Client 半**（`client/client.js`，免构建 source-as-product）：仅依赖 ARIA 语义属性定位行元素（会话行 `[aria-selected]` / 工作区标题行 `[aria-expanded]`），不碰 CSS-module 哈希类名；只拦截「跨组投放」场景，官方同组排序不受影响。迁移成功后依赖官方工作区变更事件让侧边栏分组即时归位，不调用宿主未公开的 `workspaces.refresh()`。
 - **救援面板**：经官方 `settings.section` 插槽注册设置页分栏，RPC 端点 `mover.scan`（分类扫描）与 `mover.repair`（批量 attach/relink，relink 复用同一条迁移管线）。
 - **迁移历史**：保存于 `$DSH_HOME/workspace-mover/history.json`，最多保留最近 100 条；原工作区仍存在时可直接撤回，原工作区已删除时会明确要求重新选择目标分组。
 
@@ -209,9 +210,9 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 
 **设计上就按"与生态共生"标准实现**，与其他插件冲突面很小：
 
-- **通信全命名空间**：RPC 只占 `/workspace-mover` 一个通道、不注册任何 HTTP 路由；面板走官方 `settings.section` 插槽（槽位系统天生支持多插件并存）；CSS 类 `wsm-*` 与 DOM 属性 `data-wsm-*` 均为自有命名空间；
+- **通信全命名空间**：RPC 只占 `/workspace-mover` 一个通道，通过官方 client-connection bridge 映射到前缀 POST 通道；插件不注册独立 REST 路由。面板走官方 `settings.section` 插槽（槽位系统天生支持多插件并存）；CSS 类 `wsm-*` 与 DOM 属性 `data-wsm-*` 均为自有命名空间；
 - **不改写官方 bundle 任何字节**，只挂事件监听与槽位注入（对比少数直接 patch 官方 bundle 的插件，不存在那类雷）；
-- **宿主写入全走官方通道**（registry 的 `mutate`/`attachSession`/`detachSession`、持久域状态），不引入私有数据形态，其他插件读到的永远是官方形态的数据；
+- **工作区归属写入走官方通道**（registry 的 `mutate`/`attachSession`/`detachSession`、持久域状态），不改变官方数据形态；历史、任务、备份和回收站等插件元数据只写入 `$DSH_HOME/workspace-mover/` 自有目录；
 - **零 npm 依赖**，不存在共享依赖的版本冲突。
 
 与其他类目插件同装的兼容性：
@@ -223,6 +224,13 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 | 排序 / 置顶类插件 | ⚠️ 基本兼容 | 本插件移动后精确重排「最近更新」，置顶/排序插件各自维护自己的集合——并存无碍，仅各自面板展示顺序可能不完全一致 |
 | 重画侧边栏的插件（自绘工作区树） | ⚠️ 降级共存 | 若对方替换官方工作区 DOM，本插件的 ARIA 语义选择器可能找不到行——表现为功能静默不触发，**不会损坏数据** |
 | 其他会话移动器 | ❌ 建议二选一 | 同类插件同样在 document 层拦截拖拽投放，同时安装可能导致一次拖拽被双重处理。本插件已覆盖移动 / 批量 / 合并 / 归位 / 归档恢复场景，无需重复安装 |
+
+## 🧩 兼容性与卸载
+
+- **已验证组合**：DeepSeek Harness `0.1.5-rc.1`、dsh-market `1.45.1`、Node.js `≥ 22`。本插件不修改 DSH 0.1.5 或 dsh-market 的源码，只通过官方工作区实体、registry、client connection 和设置插槽接入。
+- **市场卡片的“宿主要求未知”**：GitHub-only 插件没有 npm 发布清单时，dsh-market 可能无法从远端元数据推导宿主版本，因此显示“未知”不代表运行时不兼容；本仓库的 `package.json.engines.dsh` 已声明 `≥ 0.1.5-rc.1`。
+- **卸载可逆**：从 dsh-market 移除插件不会删除会话档案、工作区或官方记账。插件自己的历史、任务、备份和回收站元数据仍保留在 `$DSH_HOME/workspace-mover/`；移除后刷新或重启 DSH，清理已注入的客户端与宿主挂载。
+- **共存建议**：与另一个直接拦截跨工作区拖拽的会话移动器不要同时启用，避免一次拖拽被两个插件处理；其他类型插件可按上表共存。
 
 **DSH 版本敏感点**（非插件冲突）：取消归档走 registry 持久状态写通道，在不支持的宿主版本上会明确提示而非报错；投影缓存标题按 v3 形状防御性解析，文件缺失时退化为档案头标题。
 
@@ -318,17 +326,18 @@ dsh plugin --profile web add "link:E:/path/to/dsh-workspace-mover"
 
 ## 🔐 安全设计
 
-- 移动前强制备份；落地回读校验（id/cwd 双确认，不符整体回退）；attach 失败自动回滚（撤销预置记账 → 还原索引 → 还原字节 + 清理目标 + 重新挂回源工作区）；
+- 移动前强制备份；落地回读校验（id/cwd 双确认，不符整体回退）；attach 失败自动回滚（还原 live header 与索引 → 还原字节 + 清理目标 + 重新挂回源工作区）；
 - 删除进回收站：物理移动先行，失败零副作用；manifest 完整记录还原所需信息；彻底删除需二次确认；
 - 驻留内存的会话拒绝删除（防止文件被驻留对象重建为僵尸），并给出重启释放的明确指引；
 - 仅拒绝回合进行中的会话；常驻空闲会话迁移后修复写路径归属，杜绝历史分叉；
 - 注册表/持久化内部访问全部包在 try/catch 中，失败降级为功能可用 + 重启建议提示；
-- 兼容性目标：Node ≥ 22，dsh 0.1.1-rc.2；核心纯函数与端到端沙箱测试见 `npm test`（77 用例，含回滚路径、救援扫描/修复、历史撤回、工作区重定向、批量迁移、迁移后校验、回收站与备份恢复、迁移任务中心与数据保护清理、并发锁与错误码协议）。
+- 兼容性目标：Node ≥ 22，dsh 0.1.5-rc.1；核心纯函数与端到端沙箱测试见 `npm test`（95 用例，含回滚路径、救援扫描/修复、历史撤回、工作区重定向、批量迁移、迁移后校验、回收站与备份恢复、迁移任务中心与数据保护清理、并发锁与错误码协议）。
+- 会话档案遵循 DSH 0.1.5 的 v3 命名：`session.v3.jsonl.zstd` 或 `session.v3.jsonl`；同一持久化根目录混用两种压缩格式会被明确拒绝。
 
 ## ⚠️ 已知限制
 
 - 不支持把会话移入「Ungrouped」桶；
-- 常驻内存的会话（近期打开过）不能直接删除——文件会被驻留对象重建；重启 Harness 释放后再删，删除时会给出 toast 提示；
+- 常驻内存的会话（近期打开过）不能直接删除——归档只隐藏会话，不会卸载 Harness 内存对象；即使当前焦点已切走，仍可能被驻留对象重建文件。DSH 0.1.5 没有公开的按 ID 卸载接口，请重启 Harness 释放后再删，删除时会给出明确提示。
 - 行 → 会话识别优先读取行元素自带的会话标识（React props），渲染顺序对齐仅作兜底；若第三方插件替换侧边栏 DOM 导致 ARIA 选择器失效，相关功能静默停用（不损坏数据）；
 - 「扁平列表」视图无工作区标题行，本插件在该视图不激活；
 - 若宿主升级改变了注册表缓存字段名或实体结构，相关步骤走降级路径（功能可用，归属刷新可能需重启）；取消归档依赖 registry 持久写通道，不可用时明确报错而非静默失败；

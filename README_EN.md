@@ -11,7 +11,7 @@
   <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" />
   <img alt="npm dependencies: 0" src="https://img.shields.io/badge/npm%20dependencies-0-4d6bfe" /><br /><br />
   <a href="https://awesome-dsh-plugin.com"><img alt="Awesome DSH Plugin" src="https://awesome-dsh-plugin.com/badge.svg" /></a>
-  <img alt="True move" src="https://img.shields.io/badge/-True%20move-4d6bfe" /> <img alt="Zero token cost" src="https://img.shields.io/badge/-Zero%20token%20cost-4d6bfe" /> <img alt="Backup & rollback" src="https://img.shields.io/badge/-Backup%20%26%20rollback-4d6bfe" /> <img alt="Orphan rescue" src="https://img.shields.io/badge/-Orphan%20rescue-4d6bfe" /> <img alt="One-click undo" src="https://img.shields.io/badge/-One--click%20undo-4d6bfe" /> <img alt="Theme aware" src="https://img.shields.io/badge/-Theme%20aware-4d6bfe" /> <img alt="GitHub clones observed" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2FPianoPrince%2Fc14345658550a4a308570acfbaf9d170%2Fraw%2Fwsm-clones-total.json" /> <img alt="Release downloads (shown after 10 downloads)" src="https://gist.githubusercontent.com/PianoPrince/c14345658550a4a308570acfbaf9d170/raw/wsm-release-downloads.svg" />
+  <img alt="True move" src="https://img.shields.io/badge/-True%20move-4d6bfe" /> <img alt="Zero token cost" src="https://img.shields.io/badge/-Zero%20token%20cost-4d6bfe" /> <img alt="Backup & rollback" src="https://img.shields.io/badge/-Backup%20%26%20rollback-4d6bfe" /> <img alt="Orphan rescue" src="https://img.shields.io/badge/-Orphan%20rescue-4d6bfe" /> <img alt="One-click undo" src="https://img.shields.io/badge/-One--click%20undo-4d6bfe" /> <img alt="Theme aware" src="https://img.shields.io/badge/-Theme%20aware-4d6bfe" /> <img alt="GitHub clones observed" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2FPianoPrince%2Fc14345658550a4a308570acfbaf9d170%2Fraw%2Fwsm-clones-total.json" /> <!-- release-downloads-badge:start --><!-- release-downloads-badge:end -->
 </div>
 
 <div align="center">
@@ -186,10 +186,10 @@ Running sessions are rejected (host-side validation), and failed moves roll back
   3. Byte-level backup into `$DSH_HOME/workspace-mover/backups/` (rolling 20 per session);
   4. Rewrites only the first frame (header cwd) and keeps all other frames intact; published via temp file + atomic rename;
   5. Moves the session directory wholesale (Windows dir-rename quirk: exponential-backoff retries, falling back to copy+delete);
-  6. In-memory consistency closeout: invalidates three registry indexes; resident sessions additionally get stale write state cleared, indexes refreshed, and target bookkeeping pre-seeded (bypassing the frozen header's old-cwd check);
+  6. In-memory consistency closeout: invalidates three registry indexes and clears stale resident write state; before official `attachSession`, the live header `cwd` is retargeted so the host emits the destination workspace change;
   7. Calls the target entity's `attachSession` to persist bookkeeping, after the source entity has already detached;
-  8. Any failing step rolls back automatically: unseed bookkeeping → restore index snapshots → return the original to its source directory → reattach to the source workspace.
-- **Client half** (`client/client.js`, build-free source-as-product): locates rows purely by ARIA semantic attributes (session rows `[aria-selected]`, workspace title rows `[aria-expanded]`) and never touches CSS-module hash class names; it intercepts only cross-group drops, leaving official same-group sorting untouched. After a successful move it re-fetches the workspace baseline once via public API so the sidebar settles immediately.
+  8. Any failing step rolls back automatically: restore index snapshots → return the original to its source directory → reattach to the source workspace.
+- **Client half** (`client/client.js`, build-free source-as-product): locates rows purely by ARIA semantic attributes (session rows `[aria-selected]`, workspace title rows `[aria-expanded]`) and never touches CSS-module hash class names; it intercepts only cross-group drops, leaving official same-group sorting untouched. After a successful move it relies on the official workspace change event for immediate sidebar regrouping, with a page reload as the fallback.
 - **Rescue panel**: registers a settings-page column through the official `settings.section` slot, using RPC endpoints `mover.scan` (classified scan) and `mover.repair` (batched attach/relink, where relink reuses the same move pipeline).
 - **Move history**: stored at `$DSH_HOME/workspace-mover/history.json`, capped at the last 100 entries; undo goes straight back while the original workspace still exists, otherwise you are asked to choose a new target group explicitly.
 
@@ -302,17 +302,18 @@ Compatibility when installed alongside other plugin categories:
 
 ## 🔐 Security
 
-- Forced backup before every move; post-move read-back verification (id + cwd must match, otherwise the whole move rolls back); automatic rollback if attaching fails (unseed bookkeeping → restore index snapshot → restore bytes + clean target → reattach to the source workspace);
+- Forced backup before every move; post-move read-back verification (id + cwd must match, otherwise the whole move rolls back); automatic rollback if attaching fails (restore index snapshot → restore bytes + clean target → reattach to the source workspace);
 - Deletion goes to the recycle bin: the physical move happens first, so a failed delete changes nothing; the manifest records everything needed to restore; purging requires an explicit confirmation;
 - Sessions still resident in harness memory refuse deletion (their live objects would zombie-recreate files) and get an actionable toast instead;
 - Only sessions mid-turn are rejected by default; idle resident sessions get their write-path ownership fixed after moving, preventing history forks;
 - All registry/persistence internals are wrapped in try/catch—on failure the plugin degrades to functional-with-a-restart-hint instead of breaking;
-- Compatibility targets: Node ≥ 22, dsh 0.1.1-rc.2; core pure functions and end-to-end sandbox tests ship via `npm test` (77 cases covering rollback paths, rescue scan/repair, history undo, workspace repoint, post-move verification, recycle bin and backup restore, task center, data-protection cleanup, concurrency locks and the error-code protocol).
+- Compatibility targets: Node ≥ 22, dsh 0.1.5-rc.1; core pure functions and end-to-end sandbox tests ship via `npm test` (95 cases covering rollback paths, rescue scan/repair, history undo, workspace repoint, post-move verification, recycle bin and backup restore, task center, data-protection cleanup, concurrency locks and the error-code protocol).
+- Session artifacts follow DSH 0.1.5 v3 naming: `session.v3.jsonl.zstd` or `session.v3.jsonl`; mixed compression encodings in one persistence root are rejected explicitly.
 
 ## ⚠️ Known Limitations
 
 - Moving sessions into the "Ungrouped" bucket is not supported;
-- Sessions still resident in harness memory (opened recently) cannot be deleted directly — their live objects would re-create the files; restart the harness to release them first (a toast explains this when it happens);
+- Sessions still resident in harness memory (opened recently) cannot be deleted directly. Archiving only hides a session; it does not unload the Harness object, so the object may recreate the file even after focus moves elsewhere. DSH 0.1.5 exposes no public unload-by-ID API; restart the harness to release it, then delete it again.
 - Row → session identification reads the id carried by the row element itself (React props), with render-order alignment only as a fallback; if a third-party plugin replaces the sidebar DOM so the ARIA selectors no longer match, the affected features silently stop (no data is ever damaged);
 - Flat list view has no workspace title rows, so the plugin stays inactive there;
 - If a host upgrade changes registry cache field names or entity shapes, affected steps degrade gracefully (the feature still works; ownership refresh may need a restart); unarchive requires the registry's durable state channel and reports clearly when it is unavailable;

@@ -127,7 +127,7 @@ window.__ModuleLoader__.load({
 				backupDeleteBtn: "删除备份",
 				backupDeleteConfirm: "删除「{title}」的 {n} 份备份？删除后无法再从备份恢复。",
 				backupDeletedMsg: "✓ 已删除 {n} 份备份",
-				residentRefuse: "该会话仍驻留在 Harness 内存中（最近被打开过，文件删了会被它重建）。请重启 Harness 释放常驻会话后再删除。",
+				residentRefuse: "该会话当前没有焦点也可能仍驻留在 Harness 内存中（归档只隐藏，不会卸载）。DSH 0.1.5 没有公开的按 ID 卸载接口，请重启 Harness 释放常驻会话后再删除。",
 				sessionBusy: "该会话正在处理中（可能有迁移 / 还原 / 删除操作尚未完成），请稍后再试。",
 				recoveryNote: "检测到 {n} 条自动回滚也失败的记录，需人工确认：会话文件与备份均保留在原处，未丢失。请勿手动清理 pluginData 目录，查看 recovery.json 或联系开发者处理。",
 				repairAllBtn: "一键修复",
@@ -257,7 +257,7 @@ window.__ModuleLoader__.load({
 				backupDeleteBtn: "Delete backups",
 				backupDeleteConfirm: "Delete the {n} backup copies of \"{title}\"? They cannot be restored from afterwards.",
 				backupDeletedMsg: "✓ Deleted {n} backup copy(ies)",
-				residentRefuse: "This session is still resident in harness memory (opened recently) and would re-create its files. Restart the harness to release it, then delete again.",
+				residentRefuse: "This session may remain resident in harness memory even when it is not focused (archiving hides it but does not unload it). DSH 0.1.5 exposes no public unload-by-ID API; restart the harness to release it, then delete it again.",
 				sessionBusy: "This session is busy: a move / restore / delete is still in flight. Try again in a moment.",
 				recoveryNote: "{n} record(s) need manual recovery: automatic rollback also failed. Session files and backups are all kept in place — nothing was lost. Do not clean the pluginData directory by hand; inspect recovery.json or contact the developer.",
 				repairAllBtn: "Fix all",
@@ -432,6 +432,39 @@ window.__ModuleLoader__.load({
 			setTimeout(attempt, 400);
 			setTimeout(attempt, 1200);
 		}
+
+			/**
+			 * DSH 0.1.5 的工作区 feed 是最终来源，但批量迁移会先收到源组移除帧，
+			 * 目标组 upsert 可能在下一个微任务才到达。用公开的 no-op reorder API
+			 * 取回宿主确认的完整目标投影，避免界面短暂把会话放进“未分组”。
+			 */
+			async function reconcileWorkspaceProjection(ctx, workspaceId, sessionIds = []) {
+				const ids = [...new Set((Array.isArray(sessionIds) ? sessionIds : [])
+					.map((id) => String(id ?? "")).filter(Boolean))];
+				if (!workspaceId || ids.length === 0) return false;
+				const workspaces = ctx?.get?.("workspaces");
+				const list = workspaces?.list;
+				const ready = () => {
+					try {
+						const snapshot = list?.getSnapshot?.();
+						const item = snapshot?.items?.find?.((candidate) => String(candidate.workspaceId) === String(workspaceId));
+						const members = new Set((item?.sessionIds ?? []).map((id) => String(id)));
+						return Boolean(item) && ids.every((id) => members.has(id));
+					} catch {
+						return false;
+					}
+				};
+				if (ready()) return true;
+				if (typeof workspaces?.insertSessionBefore !== "function") return false;
+				try {
+					// beforeSessionId === sessionId 是官方定义的幂等 no-op，仍返回完整 WorkspaceView。
+					await workspaces.insertSessionBefore(workspaceId, ids[0], ids[0]);
+					return ready();
+				} catch (err) {
+					console.debug("[workspace-mover] projection reconcile skipped:", err?.message ?? err);
+					return false;
+				}
+			}
 
 			function injectOverlay() {
 				const overlay = document.createElement("div");
@@ -1339,7 +1372,7 @@ window.__ModuleLoader__.load({
 
 		function apply(ctx) {
 			const rpcCall = (endpoint, payload) => ctx.connection.rpc.call(CHANNEL, endpoint, payload ?? {});
-			let dragging = null; // {el, els, id} —— id 在 drop 阶段解析
+			let dragging = null; // {el, els, id, target} —— id/target 在 drop 阶段解析
 			let wsCache = null; // {items, at}
 
 			ensureStyle();
@@ -1555,23 +1588,46 @@ window.__ModuleLoader__.load({
 			//#endregion
 
 			/** 把 DOM 里第 i 个工作区标题行映射到注册表第 i 项（渲染顺序即注册表顺序）。 */
+			function normalizeHeaderText(value) {
+				return String(value ?? "").replace(/\s+/g, " ").trim();
+			}
+
+			function headerText(rowEl) {
+				return normalizeHeaderText([
+					rowEl?.getAttribute?.("aria-label"),
+					rowEl?.getAttribute?.("title"),
+					rowEl?.textContent
+				].filter(Boolean).join(" "));
+			}
+
+			function isUngroupedHeader(rowEl) {
+				return /^(?:ungrouped|未分组)(?:\s|$)/i.test(headerText(rowEl));
+			}
+
+			function visibleWorkspaceHeaders() {
+				return [...document.querySelectorAll('div[role="treeitem"][aria-expanded]')]
+					.filter((el) => el.offsetParent !== null && !isUngroupedHeader(el));
+			}
+
 			function headerIndex(rowEl) {
-				const rows = [...document.querySelectorAll('div[role="treeitem"][aria-expanded]')]
-					.filter((el) => el.offsetParent !== null);
-				return rows.indexOf(rowEl);
+				return visibleWorkspaceHeaders().indexOf(rowEl);
 			}
 
 			function resolveWorkspace(rowEl, items) {
-				const text = rowEl?.textContent?.replace(/\s+/g, " ").trim() || "";
-				if (/ungrouped|未分组/i.test(text)) return null;
-				const byText = items.find((item) => {
-					const title = String(item.title ?? "").trim();
-					const path = String(item.path ?? "").trim();
-					return (title && text.includes(title)) || (path && text.includes(path));
+				const list = Array.isArray(items) ? items : [];
+				if (!rowEl || isUngroupedHeader(rowEl)) return null;
+				const text = headerText(rowEl);
+				const lowerText = text.toLocaleLowerCase();
+				const byText = list.find((item) => {
+					const title = normalizeHeaderText(item.title);
+					const path = normalizeHeaderText(item.path);
+					return (title && lowerText.includes(title.toLocaleLowerCase()))
+						|| (path && lowerText.includes(path.toLocaleLowerCase()));
 				});
 				if (byText) return byText;
 				const idx = headerIndex(rowEl);
-				return idx >= 0 && idx < items.length ? items[idx] : null;
+				const byIndex = idx >= 0 && idx < list.length ? list[idx] : null;
+				return byIndex;
 			}
 
 			// dragstart：只做「元素判定」——拖起已多选的行 = 整批拖动，否则单选。
@@ -1582,7 +1638,7 @@ window.__ModuleLoader__.load({
 					if (!row) { dragging = null; return; }
 					const picked = validPickedRows();
 					const els = picked.length > 1 && picked.includes(row) ? picked : [row];
-					dragging = { els, el: row, id: null };
+					dragging = { els, el: row, id: null, target: null };
 				} catch { dragging = null; }
 			});
 
@@ -1590,9 +1646,17 @@ window.__ModuleLoader__.load({
 				clearHints();
 				if (!dragging) return;
 				const header = headerRow(e.target);
-				if (!header) return;
+				if (!header || isUngroupedHeader(header)) return;
 				e.preventDefault(); // 允许在此投放（没有它 drop 根本不会触发）
 				header.classList.add("wsm-drop-hint");
+				if (!dragging.target || dragging.target.header !== header) {
+					dragging.target = { header, workspaceId: null };
+					void fetchWorkspaces().then((items) => {
+						if (dragging?.target?.header !== header) return;
+						const target = resolveWorkspace(header, items);
+						dragging.target.workspaceId = target?.workspaceId ?? null;
+					}).catch(() => { /* drop 阶段会再次解析并报告错误 */ });
+				}
 			}, true);
 
 			document.addEventListener("drop", async (e) => {
@@ -1600,8 +1664,8 @@ window.__ModuleLoader__.load({
 				dragging = null;
 				clearHints();
 				if (!current) return;
-				const header = headerRow(e.target);
-				if (!header) return;
+				const header = headerRow(e.target) ?? current.target?.header;
+				if (!header || isUngroupedHeader(header)) return;
 				// 只拦截「拖到某个工作区标题行」的场景；其余交还官方逻辑
 				e.preventDefault();
 				e.stopImmediatePropagation();
@@ -1623,9 +1687,19 @@ window.__ModuleLoader__.load({
 
 				let workspace = null;
 				try {
-					const items = await fetchWorkspaces();
+					let items = await fetchWorkspaces();
 					workspace = resolveWorkspace(header, items);
-					if (!workspace) return void toast(t("staleList"), true);
+					if (!workspace && current.target?.workspaceId) {
+						workspace = items.find((item) => String(item.workspaceId) === String(current.target.workspaceId)) ?? null;
+					}
+					if (!workspace) {
+						wsCache = null;
+						items = await fetchWorkspaces();
+						workspace = resolveWorkspace(header, items);
+						if (!workspace && current.target?.workspaceId) {
+							workspace = items.find((item) => String(item.workspaceId) === String(current.target.workspaceId)) ?? null;
+						}
+					}
 				} catch (err) {
 					return void toast(t("failed", { msg: err?.message ?? err }), true);
 				}
@@ -1662,8 +1736,8 @@ window.__ModuleLoader__.load({
 					try {
 						const res = await rpcCall("mover.move", { sessionId, sessionTitle, targetWorkspaceId: workspace.workspaceId });
 						if (res?.ok) {
+							await reconcileWorkspaceProjection(ctx, workspace.workspaceId, [sessionId]);
 							toast(res.value?.attached ? t("selfHealed") : t("done", { title: workspace.title }));
-							try { void ctx.get?.("workspaces")?.refresh?.(); } catch { /* ignore */ }
 							scheduleRecencyFix(ctx, workspace.workspaceId, [sessionId]);
 							if (res.value?.restartHint) setTimeout(() => toast(t("restartHint"), true), 1200);
 						} else {
@@ -1690,11 +1764,12 @@ window.__ModuleLoader__.load({
 					}
 					const { movedCount, attachedCount, failedCount } = res.value ?? {};
 					const okCount = (movedCount ?? 0) + (attachedCount ?? 0);
+					const movedIds = (res.value?.results ?? []).filter((item) => item?.ok).map((item) => item.sessionId).filter(Boolean);
+					await reconcileWorkspaceProjection(ctx, workspace.workspaceId, movedIds);
 					let message = t("batchDone", { n: okCount });
 					if ((failedCount ?? 0) > 0) message += t("batchFailTail", { n: failedCount });
 					toast(message);
 					clearSelection(true);
-					try { void ctx.get?.("workspaces")?.refresh?.(); } catch { /* ignore */ }
 					scheduleRecencyFix(ctx, workspace.workspaceId, sessions.map((s) => s.sessionId));
 				} catch (err) {
 					toast(t("failed", { msg: err?.message ?? err }), true);
@@ -1727,10 +1802,11 @@ window.__ModuleLoader__.load({
 					}
 					const { movedCount, attachedCount, failedCount } = res.value ?? {};
 					const okCount = (movedCount ?? 0) + (attachedCount ?? 0);
+					const movedIds = (res.value?.results ?? []).filter((item) => item?.ok).map((item) => item.sessionId).filter(Boolean);
+					await reconcileWorkspaceProjection(ctx, targetId, movedIds);
 					let message = t("batchDone", { n: okCount });
 					if ((failedCount ?? 0) > 0) message += t("batchFailTail", { n: failedCount });
 					toast(message);
-					try { void ctx.get?.("workspaces")?.refresh?.(); } catch { /* ignore */ }
 					scheduleRecencyFix(ctx, targetId, ids);
 					// 合并：全部成员迁入且源分组已空时，提供删除空分组（逐级确认，失败不影响迁移结果）
 					try {

@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.1] - 2026-09-12
+
+- Compatible with DeepSeek Harness `0.1.5-rc.1`.
+- Release downloads stay off the README until the total exceeds 10; when shown they use shields.io like the other badges instead of a gist SVG that GitHub renders as a broken text link.
+- Host half waits for `webServer` before registering RPC, fixing boot failures on 0.1.5.
+- Session relocation follows the highest canonical generation (`session.vN.jsonl[.zstd]`) instead of a hard-coded `session.jsonl.zstd`.
+- Refuse conflicting operations through in-process session/workspace locks; no `session.lock` file is created.
+- Keep full mover feature set (rescue, repoint, trash/backup, task center); official DSH still has no cross-workspace true move.
+
 All notable changes to this project are documented here.
 
 ## [1.4.2] - 2026-09-09

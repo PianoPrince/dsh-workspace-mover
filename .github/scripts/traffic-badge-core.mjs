@@ -27,6 +27,44 @@ export function normalizeClonesResponse(body) {
 	};
 }
 
+function normalizeWindowResponse(body, field, label) {
+	if (!body || typeof body !== 'object') throw new Error(`${label} response is not an object`);
+	nonNegativeNumber(body.count, `${label} count`);
+	nonNegativeNumber(body.uniques, `${label} uniques`);
+	if (!Array.isArray(body[field])) throw new Error(`${label} response has no ${field} array`);
+	return {
+		count: body.count,
+		uniques: body.uniques,
+		days: body[field].map((day) => ({
+			date: dateOf(day?.timestamp),
+			count: nonNegativeNumber(day?.count, `${label} daily count`),
+			uniques: nonNegativeNumber(day?.uniques, `${label} daily uniques`)
+		}))
+	};
+}
+
+export function normalizeViewsResponse(body) {
+	return normalizeWindowResponse(body, 'views', 'views');
+}
+
+function normalizePopularResponse(body, key, label) {
+	if (!Array.isArray(body)) throw new Error(`${label} response is not an array`);
+	return body.map((item) => ({
+		[key]: String(item?.[key] ?? ''),
+		...(key === 'path' ? { title: String(item?.title ?? '') } : {}),
+		count: nonNegativeNumber(item?.count, `${label} count`),
+		uniques: nonNegativeNumber(item?.uniques, `${label} uniques`)
+	}));
+}
+
+export function normalizeReferrersResponse(body) {
+	return normalizePopularResponse(body, 'referrer', 'referrers');
+}
+
+export function normalizePathsResponse(body) {
+	return normalizePopularResponse(body, 'path', 'paths');
+}
+
 export function parseHistory(content) {
 	const rows = [];
 	for (const line of String(content ?? '').split('\n')) {

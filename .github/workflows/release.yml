@@ -1,6 +1,5 @@
 # 推 v* tag 自动创建 GitHub Release，说明自动取自 CHANGELOG.md 对应版本段落。
-# 前置：仓库 Secrets 里配置 TRAFFIC_TOKEN（classic PAT，repo 权限即可；GITHUB_TOKEN 也能建
-# Release，但用同一 token 保持与 traffic-badge 的凭据策略一致）。
+# 前置：仓库 Secrets 配置 TRAFFIC_TOKEN，用于 Traffic API 与 Gist；Release 使用 GITHUB_TOKEN。
 name: Release
 
 on:
@@ -24,7 +23,7 @@ jobs:
         run: npm pack --ignore-scripts --pack-destination .
       - name: Create GitHub Release
         env:
-          GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --notes-file RELEASE_NOTES.md "dsh-workspace-mover-*.tgz"
       - name: Update release download metric
         env:
