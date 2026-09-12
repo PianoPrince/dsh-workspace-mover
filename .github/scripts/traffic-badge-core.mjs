@@ -117,7 +117,9 @@ export function buildState(previousState, rows, snapshot, collectedAt = new Date
 
 export function buildBadgeFiles(state) {
 	const badge = (label, message) => JSON.stringify({ schemaVersion: 1, label, message, color: 'blue' });
+	const uniques = state.lastWindow?.uniques;
+	const uniqueSuffix = typeof uniques === 'number' && Number.isFinite(uniques) ? ` · ${uniques} unique` : '';
 	return {
-		'wsm-clones-total.json': { content: badge('GitHub clones observed', `${state.cumulativeClones} since ${state.observedSince}`) }
+		'wsm-clones-total.json': { content: badge('GitHub clones observed', `${state.cumulativeClones} since ${state.observedSince}${uniqueSuffix}`) }
 	};
 }
