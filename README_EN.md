@@ -216,6 +216,16 @@ Compatibility when installed alongside other plugin categories:
 
 ## 🆕 Recent Updates
 
+### v2.0.1 · 2026-09-12
+
+- Compatible with DeepSeek Harness 0.1.5: selects the highest official v3 session artifact and supports both `.jsonl` and `.jsonl.zstd`; mixed encodings are rejected explicitly.
+- Fixes RPC mounting during the 0.1.5 startup sequence and strengthens concurrent move protection.
+- Keeps workspace moving, recycle-bin, task-center, and backup-recovery features available.
+- Releases include a `.tgz` installation asset.
+- 95 tests pass.
+
+See [CHANGELOG.md](CHANGELOG.md) for the full change history.
+
 ### v1.4.0 · 2026-09-06
 
 - Concurrency guards: concurrent operations on the same session / target workspace return "busy" immediately — never queued, never deadlocked; bulk moves are de-duplicated so a batch cannot race itself
