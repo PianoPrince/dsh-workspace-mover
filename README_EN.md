@@ -202,7 +202,7 @@ Some advanced actions need newer DSH capabilities; when unavailable the UI says 
 - **If automatic recovery is not possible**, the rescue panel flags it for manual review; session files and backups are kept — **never silently discarded**;
 - **Recently opened sessions still resident in Harness memory** cannot be deleted until you restart Harness (the UI says so clearly).
 
-> Failure paths prefer keeping your data — sessions are never silently dropped.  
+> Failure paths prefer keeping your data — sessions are never silently dropped.<br>
 > This is **not** a claim that every error auto-recovers: extreme cases need manual action, with data left in place.
 
 ## ⚠️ Known limitations
@@ -222,7 +222,7 @@ Some advanced actions need newer DSH capabilities; when unavailable the UI says 
 - Workspace move, recycle bin, task center, and backup recovery remain available
 - Releases include a `.tgz` install asset
 
-Full history: [CHANGELOG.md](CHANGELOG.md).  
+Full history: [CHANGELOG.md](CHANGELOG.md).<br>
 Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## License

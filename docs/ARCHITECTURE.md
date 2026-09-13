@@ -24,7 +24,7 @@ Client locates rows by ARIA semantics only:
 
 It never depends on CSS-module hash class names. UI uses official design tokens (`--dsw-alias-*`) for theme adaptation.
 
-Only cross-group drops are intercepted; official same-group reorder stays untouched. After a successful move the client relies on the official workspace-change event (page reload is the user-facing fallback).
+Only cross-group drops are intercepted; official same-group reorder stays untouched. After a successful move the client actively refreshes and reconciles the official workspace projection; a page reload remains the user-facing fallback.
 
 ## RPC channel
 
@@ -48,6 +48,8 @@ Single logical channel `/workspace-mover` via `ctx.connection.rpc.handle('/works
 | `mover.session.delete` | Session → recycle bin |
 | `mover.trash.list` / `mover.trash.restore` / `mover.trash.purge` | Recycle bin |
 | `mover.backups.list` / `mover.backups.restore` / `mover.backups.deleteOne` | Backup management |
+| `mover.tasks.list` / `mover.tasks.retry` / `mover.tasks.forget` | Migration task center |
+| `mover.data.cleanup` | Dry-run and clean aged plugin data |
 
 Errors carry stable codes (`busy`, `conflict`, `not-found`, `rollback-failed`, …). Host logs write failures under `MOVE FAILED`.
 

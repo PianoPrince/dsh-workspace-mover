@@ -200,7 +200,7 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 - **无法自动恢复时**，会在救援面板明确标出，需要人工确认；会话文件与备份始终保留，**绝不静默丢弃**；
 - **近期打开过、仍驻留在 Harness 内存中的会话**不能直接删除，需重启 Harness 后再删（界面会给出明确提示）。
 
-> 失败路径优先保数据，不静默丢会话。  
+> 失败路径优先保数据，不静默丢会话。<br>
 > 并非「任何错误都能自动恢复」：极端情况下会要求人工处理，但数据会留在原处。
 
 ## ⚠️ 已知限制
@@ -220,7 +220,7 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 - 工作区迁移、回收站、任务中心、备份恢复等功能保持可用
 - Release 提供 `.tgz` 安装资产
 
-完整变更记录见 [CHANGELOG.md](CHANGELOG.md)。  
+完整变更记录见 [CHANGELOG.md](CHANGELOG.md)。<br>
 实现与架构说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ## License
