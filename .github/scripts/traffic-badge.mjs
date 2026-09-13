@@ -1,5 +1,6 @@
 // Daily GitHub traffic collection for the public README badges.
 // GitHub exposes a rolling 14-day window; the daily rows are persisted in a Gist.
+import { sanitizeGistPatchFiles } from './release-downloads-core.mjs';
 import { buildBadgeFiles, buildState, mergeHistory, normalizeClonesResponse, normalizePathsResponse, normalizeReferrersResponse, normalizeViewsResponse, parseHistory } from './traffic-badge-core.mjs';
 
 const REPO = process.env.REPO ?? 'PianoPrince/dsh-workspace-mover';
@@ -90,11 +91,12 @@ const files = {
 	...buildBadgeFiles(state)
 };
 if (rows.length > 0) files['wsm-traffic-history.jsonl'] = { content: rows.map((row) => JSON.stringify(row)).join('\n') + '\n' };
-if (gist.body.files['wsm-clones-14d.json']) files['wsm-clones-14d.json'] = { content: '' };
+if (gist.body.files['wsm-clones-14d.json']) files['wsm-clones-14d.json'] = null;
 
-const patched = await api(`/gists/${GIST_ID}`, { method: 'PATCH', body: JSON.stringify({ files }) });
+const safeFiles = sanitizeGistPatchFiles(gist.body.files, files);
+const patched = await api(`/gists/${GIST_ID}`, { method: 'PATCH', body: JSON.stringify({ files: safeFiles }) });
 if (patched.status !== 200) {
-	console.error(`gist update failed (HTTP ${patched.status}): ${JSON.stringify(patched.body?.message ?? patched.body)}`);
+	console.error(`gist update failed (HTTP ${patched.status}): ${JSON.stringify(patched.body?.errors ?? patched.body?.message ?? patched.body)}`);
 	process.exit(1);
 }
 console.log(`traffic badge updated: 14d=${snapshot.count} (${snapshot.uniques} uniques), days on record=${rows.length}, cumulative=${state.cumulativeClones}, observedSince=${state.observedSince}, quality=${state.quality}`);

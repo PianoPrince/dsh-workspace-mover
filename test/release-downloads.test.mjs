@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { applyReleaseBadgeToMarkdown, buildReleaseBadgeFiles, RELEASE_BADGE_END, RELEASE_BADGE_START, summarizeReleaseAssets } from '../.github/scripts/release-downloads-core.mjs';
+import { applyReleaseBadgeToMarkdown, buildReleaseBadgeFiles, RELEASE_BADGE_END, RELEASE_BADGE_START, sanitizeGistPatchFiles, summarizeReleaseAssets } from '../.github/scripts/release-downloads-core.mjs';
 
 const gistId = 'c14345658550a4a308570acfbaf9d170';
 
@@ -42,6 +42,34 @@ test('hidden state deletes gist SVG and shields files so GitHub cannot render a 
 	const data = JSON.parse(files['wsm-release-downloads-data.json'].content);
 	assert.equal(data.total, 3);
 	assert.equal(data.visible, false);
+});
+
+test('sanitizeGistPatchFiles skips deletes for files that are not on the gist', () => {
+	const patch = buildReleaseBadgeFiles({ total: 3, assets: [], updatedAt: '2026-09-10T00:00:00Z', visible: false });
+	const sanitized = sanitizeGistPatchFiles({ 'wsm-release-downloads-data.json': { content: '{}' } }, patch);
+	assert.deepEqual(Object.keys(sanitized).sort(), ['wsm-release-downloads-data.json']);
+	assert.equal(sanitized['wsm-release-downloads.json'], undefined);
+	assert.equal(sanitized['wsm-release-downloads.svg'], undefined);
+
+	const withExisting = sanitizeGistPatchFiles(
+		{
+			'wsm-release-downloads-data.json': { content: '{}' },
+			'wsm-release-downloads.json': { content: '{}' },
+			'wsm-clones-14d.json': { content: 'x' }
+		},
+		{ ...patch, 'wsm-clones-14d.json': null }
+	);
+	assert.equal(withExisting['wsm-release-downloads.json'], null);
+	assert.equal(withExisting['wsm-release-downloads.svg'], undefined);
+	assert.equal(withExisting['wsm-clones-14d.json'], null);
+	assert.equal(typeof withExisting['wsm-release-downloads-data.json'].content, 'string');
+});
+
+test('sanitizeGistPatchFiles turns empty content into a delete only when the file exists', () => {
+	const empty = sanitizeGistPatchFiles({}, { 'a.json': { content: '' } });
+	assert.deepEqual(empty, {});
+	const present = sanitizeGistPatchFiles({ 'a.json': { content: 'x' } }, { 'a.json': { content: '' } });
+	assert.deepEqual(present, { 'a.json': null });
 });
 
 test('README keeps an invisible marker below 10 and a shields graphic above 10', () => {
