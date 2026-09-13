@@ -215,13 +215,11 @@ Some advanced actions need newer DSH capabilities; when unavailable the UI says 
 
 ## 🆕 Recent version
 
-### v2.0.1 · 2026-09-12
+### v2.0.2 · 2026-09-13
 
-- Compatible with DeepSeek Harness 0.1.5 session archive naming and compression (`.jsonl` / `.jsonl.zstd`; mixed encodings are rejected)
-- Fixes plugin mounting during the 0.1.5 startup sequence and strengthens concurrency protection
-- Workspace move, recycle bin, task center, and backup recovery remain available
-- Releases include a `.tgz` install asset
-
+- Fixed GitHub Traffic badge updates when downloads are at or below 10
+- Completed the architecture documentation and RPC list, and corrected the documented workspace projection refresh behavior
+- Published `.tgz` assets now include the architecture documentation and screenshots, with duplicate historical changelog entries removed
 Full history: [CHANGELOG.md](CHANGELOG.md).<br>
 Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.0.2] - 2026-09-13
+
+- Fixed GitHub Traffic badge updates when a Gist patch would delete a file that is not present; the workflow now skips missing-file deletes and avoids HTTP 422 failures.
+- Completed the architecture documentation: the RPC endpoint list and workspace projection refresh behavior now match the implementation.
+- Published `.tgz` assets now include the architecture documentation and screenshots, and duplicate historical changelog entries were removed.
+
 ## [2.0.1] - 2026-09-12
 
 - Compatible with DeepSeek Harness `0.1.5-rc.1`.

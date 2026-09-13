@@ -213,13 +213,11 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 
 ## 🆕 最近版本
 
-### v2.0.1 · 2026-09-12
+### v2.0.2 · 2026-09-13
 
-- 适配 DeepSeek Harness 0.1.5 会话档案命名与压缩格式（`.jsonl` / `.jsonl.zstd`，混用会明确拒绝）
-- 修复 0.1.5 启动阶段的插件挂载问题，并加强并发保护
-- 工作区迁移、回收站、任务中心、备份恢复等功能保持可用
-- Release 提供 `.tgz` 安装资产
-
+- 修复 GitHub Traffic badge 在下载数不超过 10 时更新失败的问题
+- 完善架构说明与 RPC 清单，修正文档中的工作区投影刷新行为
+- 发布 `.tgz` 安装资产时同时包含架构文档与截图，并清理重复的历史版本记录
 完整变更记录见 [CHANGELOG.md](CHANGELOG.md)。<br>
 实现与架构说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
