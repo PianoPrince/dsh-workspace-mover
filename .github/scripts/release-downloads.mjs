@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyReleaseBadgeToMarkdown, buildReleaseBadgeFiles, summarizeReleaseAssets } from './release-downloads-core.mjs';
+import { applyReleaseBadgeToMarkdown, buildReleaseBadgeFiles, sanitizeGistPatchFiles, summarizeReleaseAssets } from './release-downloads-core.mjs';
 
 const REPO = process.env.REPO || 'PianoPrince/dsh-workspace-mover';
 const GIST_ID = process.env.GIST_ID || 'c14345658550a4a308570acfbaf9d170';
@@ -48,9 +48,11 @@ if (gist.status !== 200) {
 	process.exit(1);
 }
 
-const patched = await api('/gists/' + GIST_ID, { method: 'PATCH', body: JSON.stringify({ files }) });
+const safeFiles = sanitizeGistPatchFiles(gist.body && gist.body.files, files);
+const patched = await api('/gists/' + GIST_ID, { method: 'PATCH', body: JSON.stringify({ files: safeFiles }) });
 if (patched.status !== 200) {
-	console.error('gist update failed (HTTP ' + patched.status + '): ' + JSON.stringify(patched.body && patched.body.message ? patched.body.message : patched.body));
+	const detail = patched.body && (patched.body.errors || patched.body.message || patched.body);
+	console.error('gist update failed (HTTP ' + patched.status + '): ' + JSON.stringify(detail));
 	process.exit(1);
 }
 

@@ -17,6 +17,26 @@ export function releaseDownloadsImg(gistId, owner) {
 	return '<img alt="Release downloads" src="' + shieldsReleaseDownloadsUrl(gistId, owner) + '" style="height:20px; margin:0 2px;" />';
 }
 
+// Gist PATCH rejects deletes of files that are not present (HTTP 422 Validation Failed).
+export function sanitizeGistPatchFiles(existingFiles, patchFiles) {
+	const existing = existingFiles && typeof existingFiles === 'object' ? existingFiles : {};
+	const out = {};
+	for (const [name, value] of Object.entries(patchFiles || {})) {
+		if (value === null || value === undefined) {
+			if (Object.prototype.hasOwnProperty.call(existing, name)) out[name] = null;
+			continue;
+		}
+		const content = value && typeof value === 'object' ? value.content : undefined;
+		if (typeof content === 'string' && content.length === 0) {
+			// Empty string is invalid for gist files; delete only if present.
+			if (Object.prototype.hasOwnProperty.call(existing, name)) out[name] = null;
+			continue;
+		}
+		out[name] = value;
+	}
+	return out;
+}
+
 export function summarizeReleaseAssets(releases, options) {
 	const prefix = (options && options.prefix) || DEFAULT_PREFIX;
 	const assets = [];
