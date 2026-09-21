@@ -8,7 +8,7 @@
   <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.0.2-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.0.3-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="DSH engines" src="https://img.shields.io/badge/DSH-%E2%89%A50.1.5--rc.1-339933" style="height:20px; margin:0 2px;" />
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/PianoPrince/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
     <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" style="height:20px; margin:0 2px;" /></a>
@@ -192,7 +192,7 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 
 | 插件版本 | 已验证 DeepSeek Harness | Node | 备注 |
 |----------|-------------------------|------|------|
-| 2.0.2 | `0.1.5-rc.1`、`0.1.5-rc.2` | `≥22` | 真迁移 / 批量 / 救援 / 回收站 / 备份 |
+| 2.0.3 | `0.1.5-rc.1`、`0.1.5-rc.2` | `≥22` | 真迁移 / 批量 / 救援 / 回收站 / 备份；首次发布 npm |
 | — | `0.1.6-alpha.*` | `≥22` | 尚未正式验证；侧边栏分组与插件热卸载需回归 |
 
 - **engines 声明**：`package.json` → `engines.dsh` ≥ `0.1.5-rc.1`，`engines.node` ≥ `22`（与 CI 矩阵 Node 22/24 一致）。
@@ -225,11 +225,12 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 
 ## 🆕 最近版本
 
-### v2.0.2 · 2026-09-13
+### v2.0.3 · 2026-09-21
 
-- 修复 GitHub Traffic badge 在下载数不超过 10 时更新失败的问题
-- 完善架构说明与 RPC 清单，修正文档中的工作区投影刷新行为
-- 发布 `.tgz` 安装资产时同时包含架构文档与截图，并清理重复的历史版本记录
+- 首次发布到 npm：`dsh plugin --profile web add dsh-workspace-mover`
+- 本地质量门禁 `npm run check`；CI 与之对齐
+- README 增加 npm / DSH 徽章与宿主兼容矩阵
+
 完整变更记录见 [CHANGELOG.md](CHANGELOG.md)。<br>
 实现与架构说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 

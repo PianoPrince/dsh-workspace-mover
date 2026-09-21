@@ -8,7 +8,7 @@
   <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.0.2-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.0.3-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="DSH engines" src="https://img.shields.io/badge/DSH-%E2%89%A50.1.5--rc.1-339933" style="height:20px; margin:0 2px;" />
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/PianoPrince/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
     <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" style="height:20px; margin:0 2px;" /></a>
@@ -194,7 +194,7 @@ Built to coexist: private communication/style namespaces, no rewrites of officia
 
 | Plugin version | Verified DeepSeek Harness | Node | Notes |
 |----------------|---------------------------|------|-------|
-| 2.0.2 | `0.1.5-rc.1`, `0.1.5-rc.2` | `≥22` | True move / bulk / rescue / recycle bin / backups |
+| 2.0.3 | `0.1.5-rc.1`, `0.1.5-rc.2` | `≥22` | True move / bulk / rescue / recycle bin / backups; first npm publish |
 | — | `0.1.6-alpha.*` | `≥22` | Not yet verified; sidebar grouping and plugin hot-unload need regression |
 
 - **Engines**: `package.json` → `engines.dsh` ≥ `0.1.5-rc.1`, `engines.node` ≥ `22` (aligned with the CI Node 22/24 matrix).
@@ -227,11 +227,12 @@ Some advanced actions need newer DSH capabilities; when unavailable the UI says 
 
 ## 🆕 Recent version
 
-### v2.0.2 · 2026-09-13
+### v2.0.3 · 2026-09-21
 
-- Fixed GitHub Traffic badge updates when downloads are at or below 10
-- Completed the architecture documentation and RPC list, and corrected the documented workspace projection refresh behavior
-- Published `.tgz` assets now include the architecture documentation and screenshots, with duplicate historical changelog entries removed
+- First publish to npm: `dsh plugin --profile web add dsh-workspace-mover`
+- Local quality gate `npm run check`; CI mirrors the same steps
+- README npm / DSH badges and host compatibility matrix
+
 Full history: [CHANGELOG.md](CHANGELOG.md).<br>
 Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
