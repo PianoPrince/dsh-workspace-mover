@@ -7,6 +7,9 @@
   <b style="font-size: 1.15em;">Drag a session onto another workspace in the sidebar—a true move of the original archive, not a copy</b><br /><br />
   <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
+    <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.0.2-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="DSH engines" src="https://img.shields.io/badge/DSH-%E2%89%A50.1.5--rc.1-339933" style="height:20px; margin:0 2px;" />
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/PianoPrince/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
     <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" style="height:20px; margin:0 2px;" /></a>
     <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
@@ -187,8 +190,17 @@ Built to coexist: private communication/style namespaces, no rewrites of officia
 
 ## 🧩 Compatibility and uninstall
 
-- **Verified**: DeepSeek Harness `0.1.5-rc.1`, dsh-market `1.45.1`, Node.js `≥ 22`. Does not patch DSH source; official extension points only.
-- **Marketplace "host requirement unknown"**: GitHub-only packages without an npm manifest may show unknown — that is metadata, not runtime incompatibility. `package.json` declares `engines.dsh` ≥ `0.1.5-rc.1`.
+### Version compatibility matrix
+
+| Plugin version | Verified DeepSeek Harness | Node | Notes |
+|----------------|---------------------------|------|-------|
+| 2.0.2 | `0.1.5-rc.1`, `0.1.5-rc.2` | `≥22` | True move / bulk / rescue / recycle bin / backups |
+| — | `0.1.6-alpha.*` | `≥22` | Not yet verified; sidebar grouping and plugin hot-unload need regression |
+
+- **Engines**: `package.json` → `engines.dsh` ≥ `0.1.5-rc.1`, `engines.node` ≥ `22` (aligned with the CI Node 22/24 matrix).
+- **Other known combination**: dsh-market `1.45.1`. Does not patch DSH source; official extension points only.
+- **Quality gate**: run `npm run check` before opening a PR (syntax + tests + `npm pack --dry-run`); CI runs the same steps on ubuntu / windows / macos × Node 22/24.
+- **Marketplace "host requirement unknown"**: GitHub-only packages without an npm manifest may show unknown — that is metadata, not runtime incompatibility.
 - **Uninstall is reversible**: removing the plugin does not delete session archives, workspaces, or official bookkeeping. Plugin history/tasks/backups/recycle-bin data stay in the plugin data directory (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)); refresh or restart DSH to clear injected UI.
 - **Coexistence**: do not enable a second cross-workspace drag mover; other categories can follow the table above.
 

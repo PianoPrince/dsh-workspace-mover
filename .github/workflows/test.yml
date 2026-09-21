@@ -18,5 +18,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - run: node --check lib/index.js && node --check client/client.js
-      - run: npm test
+      - name: Syntax check
+        run: npm run check:syntax
+      - name: Tests
+        run: npm test
+      - name: Pack dry-run
+        run: npm run check:pack

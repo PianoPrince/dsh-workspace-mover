@@ -7,6 +7,9 @@
   <b style="font-size: 1.15em;">在侧边栏把会话拖到另一个工作区——真迁移原始档案，而不是复制</b><br /><br />
   <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
+    <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.0.2-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="DSH engines" src="https://img.shields.io/badge/DSH-%E2%89%A50.1.5--rc.1-339933" style="height:20px; margin:0 2px;" />
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/PianoPrince/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
     <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" style="height:20px; margin:0 2px;" /></a>
     <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
@@ -185,8 +188,17 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 
 ## 🧩 兼容性与卸载
 
-- **已验证组合**：DeepSeek Harness `0.1.5-rc.1`、dsh-market `1.45.1`、Node.js `≥ 22`。不修改 DSH 源码，仅通过官方扩展点接入。
-- **市场卡片的「宿主要求未知」**：GitHub-only 插件没有 npm 发布清单时，dsh-market 可能无法从远端元数据推导宿主版本；显示「未知」**不代表**运行时不兼容。仓库 `package.json` 已声明 `engines.dsh` ≥ `0.1.5-rc.1`。
+### 版本兼容矩阵
+
+| 插件版本 | 已验证 DeepSeek Harness | Node | 备注 |
+|----------|-------------------------|------|------|
+| 2.0.2 | `0.1.5-rc.1`、`0.1.5-rc.2` | `≥22` | 真迁移 / 批量 / 救援 / 回收站 / 备份 |
+| — | `0.1.6-alpha.*` | `≥22` | 尚未正式验证；侧边栏分组与插件热卸载需回归 |
+
+- **engines 声明**：`package.json` → `engines.dsh` ≥ `0.1.5-rc.1`，`engines.node` ≥ `22`（与 CI 矩阵 Node 22/24 一致）。
+- **其他已知组合**：dsh-market `1.45.1`。不修改 DSH 源码，仅通过官方扩展点接入。
+- **质量门禁**：提交前运行 `npm run check`（语法检查 + 测试 + `npm pack --dry-run`）；CI 在 ubuntu / windows / macos × Node 22/24 上执行同等步骤。
+- **市场卡片的「宿主要求未知」**：GitHub-only 插件没有 npm 发布清单时，dsh-market 可能无法从远端元数据推导宿主版本；显示「未知」**不代表**运行时不兼容。
 - **卸载可逆**：移除插件不会删除会话档案、工作区或官方记账。插件自己的历史、任务、备份和回收站数据仍保留在插件数据目录（见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)）；移除后刷新或重启 DSH 即可清理注入的界面。
 - **共存建议**：不要与另一个跨工作区拖拽移动器同时启用；其他类型插件可按上表共存。
 
