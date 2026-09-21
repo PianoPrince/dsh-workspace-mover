@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Engineering
+
+- Added `npm run check` (syntax + tests + `npm pack --dry-run`) as the local quality gate; CI now runs the same three steps.
+- README (zh/en): CI / npm version / plugin / DSH engines badges and a host compatibility matrix (`0.1.5-rc.1` / `rc.2`, 0.1.6-alpha pending).
+- CONTRIBUTING: release checklist keeps `package.json` version, CHANGELOG, and git tags aligned; PR template requires `npm run check`.
+
 ## [2.0.2] - 2026-09-13
 
 - Fixed GitHub Traffic badge updates when a Gist patch would delete a file that is not present; the workflow now skips missing-file deletes and avoids HTTP 422 failures.
