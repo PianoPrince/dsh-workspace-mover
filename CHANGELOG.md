@@ -1,11 +1,12 @@
 # Changelog
 
-## [Unreleased]
+## [2.0.3] - 2026-09-21
 
 ### Engineering
 
-- Added `npm run check` (syntax + tests + `npm pack --dry-run`) as the local quality gate; CI now runs the same three steps.
-- README (zh/en): CI / npm version / plugin / DSH engines badges and a host compatibility matrix (`0.1.5-rc.1` / `rc.2`, 0.1.6-alpha pending).
+- First publish to the public npm registry as `dsh-workspace-mover` (installs via `dsh plugin --profile web add dsh-workspace-mover`).
+- Local quality gate `npm run check` (syntax + tests + pack dry-run); CI runs the same steps on ubuntu / windows / macos × Node 22/24.
+- README (zh/en): CI / npm version / plugin / DSH engines badges and a host compatibility matrix (`0.1.5-rc.1` / `rc.2`; `0.1.6-alpha` pending verification).
 - CONTRIBUTING: release checklist keeps `package.json` version, CHANGELOG, and git tags aligned; PR template requires `npm run check`.
 
 ## [2.0.2] - 2026-09-13
