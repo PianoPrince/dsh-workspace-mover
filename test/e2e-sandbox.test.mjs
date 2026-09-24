@@ -1802,3 +1802,120 @@ test('mover.session.delete: archived resident idle session still refuses delete'
   assert.ok(existsSync(artifactPath(root, A, 'session-aaa')), 'artifact untouched');
   assert.deepEqual(ctx.workspaceRegistry.archivedSessionIds, ['session-aaa']);
 });
+
+// ===== v2.1.0 agent 工具 =====
+
+/** 给 ctx 挂上 dsh-tools / dsh-user-approval 的测试替身，返回工具定义捕获数组和审批记录。 */
+function mountToolStubs(approvalOutcome = 'allowed-once') {
+  const registered = [];
+  const approvalCalls = [];
+  ctx.tools = { register: (def) => registered.push(def) };
+  ctx.approval = {
+    async request(req) {
+      approvalCalls.push(req);
+      if (typeof approvalOutcome === 'function') return approvalOutcome(req);
+      return approvalOutcome;
+    }
+  };
+  return { registered, approvalCalls };
+}
+
+const FAKE_EXEC = () => ({ agent: { session: {} }, signal: undefined });
+
+test('v2.1 apply 在带 dsh-tools 的宿主上注册三个 agent 工具，status 汇报能力位', async () => {
+  const { registered } = mountToolStubs();
+  apply(ctx);
+  assert.deepEqual(registered.map((t) => t.name), ['mover_list_sessions', 'mover_move_session', 'mover_repair_sessions']);
+  for (const def of registered) {
+    assert.equal(typeof def.execute, 'function', `${def.name}.execute`);
+    assert.equal(typeof def.output?.render, 'function', `${def.name}.output.render`);
+    assert.equal(def.output?.schema?.type, 'object', `${def.name}.output.schema`);
+  }
+  assert.equal(registered[1].parameters.required.join(','), 'sessionId,targetWorkspaceId');
+  const status = await call('mover.status');
+  assert.equal(status.value.agentTools, true);
+});
+
+test('v2.1 无 dsh-tools 宿主上 apply 不受影响（静默跳过）', async () => {
+  apply(ctx);
+  const status = await call('mover.status');
+  assert.equal(status.ok, true);
+  assert.equal(status.value.agentTools, false);
+});
+
+test('v2.1 mover_list_sessions 合成 scan + workspaces（含状态与计数）', async () => {
+  const { registered } = mountToolStubs();
+  apply(ctx);
+  const list = registered.find((t) => t.name === 'mover_list_sessions');
+  entityA.record.sessionIds.push('session-aaa'); // 夹具本就未记账：记账后断言 ok 路径
+  const value = await list.execute({}, FAKE_EXEC());
+  assert.ok(value.workspaces.some((w) => w.workspaceId === 'wid-a'));
+  assert.ok(value.workspaces.some((w) => w.workspaceId === 'wid-b'));
+  const aaa = value.sessions.find((s) => s.sessionId === 'session-aaa');
+  assert.ok(aaa, 'fixture session listed');
+  assert.equal(aaa.status, 'ok');
+  assert.deepEqual(aaa.ownerWorkspaceIds, ['wid-a']);
+  assert.equal(typeof value.counts, 'object');
+  assert.equal(value.recoveryCount, 0);
+});
+
+test('v2.1 mover_move_session 审批通过后经 dispatch 迁移成功', async () => {
+  const { registered, approvalCalls } = mountToolStubs();
+  apply(ctx);
+  const move = registered.find((t) => t.name === 'mover_move_session');
+  const exec = FAKE_EXEC();
+  const value = await move.execute({ sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' }, exec);
+  assert.equal(value.verified, true);
+  assert.equal(readHeader(readFileSync(findArtifact('session-aaa'))).cwd, B);
+  assert.equal(approvalCalls.length, 1);
+  assert.equal(approvalCalls[0].toolName, 'mover_move_session');
+  assert.equal(approvalCalls[0].agent, exec.agent);
+  assert.match(String(approvalCalls[0].reason), /session-aaa/);
+});
+
+test('v2.1 审批拒绝 / 接缝异常时 move 拒绝执行（fail-closed）', async () => {
+  for (const outcome of ['denied', 'cancelled', 'unavailable']) {
+    const { registered } = mountToolStubs(outcome);
+    apply(ctx);
+    const move = registered.find((t) => t.name === 'mover_move_session');
+    await assert.rejects(
+      move.execute({ sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' }, FAKE_EXEC()),
+      new RegExp(outcome)
+    );
+    assert.equal(readHeader(readFileSync(findArtifact('session-aaa'))).cwd, A, `${outcome} 后文件未动`);
+  }
+  // 接缝抛错：同样不放行
+  const { registered: reg2 } = mountToolStubs(() => { throw new Error('no open turn'); });
+  apply(ctx);
+  const move2 = reg2.find((t) => t.name === 'mover_move_session');
+  await assert.rejects(move2.execute({ sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' }, FAKE_EXEC()), /could not be requested/);
+  assert.equal(readHeader(readFileSync(findArtifact('session-aaa'))).cwd, A);
+});
+
+test('v2.1 mover_move_session 错误码透传；无效输入不惊动审批', async () => {
+  const { registered, approvalCalls } = mountToolStubs();
+  apply(ctx);
+  const move = registered.find((t) => t.name === 'mover_move_session');
+  await assert.rejects(
+    move.execute({ sessionId: 'session-aaa', targetWorkspaceId: 'wid-nope' }, FAKE_EXEC()),
+    /\[not-found\]/
+  );
+  await assert.rejects(
+    move.execute({ sessionId: 'x'.repeat(301), targetWorkspaceId: 'wid-b' }, FAKE_EXEC()),
+    /\[invalid-input\]|must be a non-empty string/
+  );
+  assert.equal(approvalCalls.length, 1, 'invalid-input 在审批前就被拦截');
+});
+
+test('v2.1 mover_repair_sessions 走审批并修复未记账夹具会话', async () => {
+  const { registered, approvalCalls } = mountToolStubs();
+  apply(ctx);
+  const repair = registered.find((t) => t.name === 'mover_repair_sessions');
+  // 夹具 session-aaa 有匹配分组（wid-a）但未记账：repairAll 应把它补账
+  const value = await repair.execute({}, FAKE_EXEC());
+  assert.equal(value.fixedCount, 1);
+  assert.equal(value.failedCount, 0);
+  assert.ok(entityA.record.sessionIds.includes('session-aaa'), 'repair 后已补账');
+  assert.equal(approvalCalls.length, 1);
+  assert.equal(approvalCalls[0].toolName, 'mover_repair_sessions');
+});
