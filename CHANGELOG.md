@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.1.0] - 2026-09-24
+
+### Added
+
+- **Agent tools**: the plugin now registers three model-callable tools through the official `dsh-tools` registry — `mover_list_sessions` (read-only listing of workspace groups and sessions with their rescue statuses, for resolving a user-named group or conversation into exact ids), `mover_move_session` (moves one session through the same locked, backup-first, verified pipeline the panel uses), and `mover_repair_sessions` (one accounting-only repair pass). Tools are plain zero-dependency tool definitions; registration is skipped silently on hosts without `dsh-tools`, leaving the panel and drag flows untouched.
+- **User approval for mutating tools**: `mover_move_session` and `mover_repair_sessions` request an explicit user decision through the host approval seam (`dsh-user-approval`, mounted by dsh-base) before touching anything; a denial, dismissal, or unavailable answerer fails closed with a clear message, and approval-seam errors also block the call. Cancellation propagates cooperatively into the RPC layer, which finishes any in-flight rollback before stopping.
+- `mover.status` reports an `agentTools` capability flag.
+- Tests 97 → 104 (tool registration and capability flag, listing composition, approval-gated move success, fail-closed outcomes for denied / cancelled / unavailable / seam-error, error-code passthrough with no approval round-trip for invalid input, repair with approval).
+
 ## [2.0.3] - 2026-09-21
 
 ### Engineering

@@ -8,7 +8,7 @@
   <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.0.3-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.1.0-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="DSH engines" src="https://img.shields.io/badge/DSH-%E2%89%A50.1.5--rc.1-339933" style="height:20px; margin:0 2px;" />
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/PianoPrince/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
     <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" style="height:20px; margin:0 2px;" /></a>
@@ -56,6 +56,7 @@ DeepSeek Harness's sidebar supports drag-to-reorder **within** a workspace, but 
 - **🗑️ Recycle bin and backups**: deletes go to the recycle bin first and can be restored; every move creates a backup you can restore or clean up
 - **⏪ Move history and undo**: last 100 cross-workspace moves; bulk operations aggregate into one undoable entry
 - **📂 Empty-group cleanup / open folder**: only truly empty workspaces are listed; open a group directory in your file manager
+- **🤖 Agent tools**: three model-callable tools — `mover_list_sessions` / `mover_move_session` / `mover_repair_sessions` — so "move this session to group X" in the conversation runs the same backup-first pipeline as the panel; mutating tools ask for user approval first, and hosts without `dsh-tools` skip them automatically
 
 ## 🚀 Install
 
@@ -153,6 +154,13 @@ Mid-turn sessions are rejected; failed moves roll back automatically.
 6. Filter by title / session id / path / group;
 7. **Archived / recycle bin / backups**: restore archived sessions; restore or purge deleted sessions; restore or clean backups.
 
+### Conversational moves (agent tools)
+
+1. Hosts with `dsh-tools` (web by default) register three model tools: listing (read-only), move, and one-click repair;
+2. Say "list my sessions", "move session X to group Y", or "run a repair" — the model resolves names into exact ids with the listing tool first, then acts;
+3. Mutating tools raise a host approval prompt before acting (same level as the panel confirm); dismissing or denying means nothing happens;
+4. Hosts without `dsh-tools` skip the tools automatically — the panel and drag flows are unaffected.
+
 ### Bulk move
 
 1. **Ctrl/Cmd+click** to select, **Shift+click** for a range, **Esc** to clear;
@@ -194,6 +202,7 @@ Built to coexist: private communication/style namespaces, no rewrites of officia
 
 | Plugin version | Verified DeepSeek Harness | Node | Notes |
 |----------------|---------------------------|------|-------|
+| 2.1.0 | `0.1.5-rc.1`, `0.1.5-rc.2` | `≥22` | Agent tools added (auto-skipped on hosts without `dsh-tools`; everything else unchanged) |
 | 2.0.3 | `0.1.5-rc.1`, `0.1.5-rc.2` | `≥22` | True move / bulk / rescue / recycle bin / backups; first npm publish |
 | — | `0.1.6-alpha.*` | `≥22` | Not yet verified; sidebar grouping and plugin hot-unload need regression |
 
@@ -226,6 +235,13 @@ Some advanced actions need newer DSH capabilities; when unavailable the UI says 
 - Major host upgrades that change internal structures may degrade some actions or require a restart; the move-home wizard aborts before touching files if it cannot write safely.
 
 ## 🆕 Recent version
+
+### v2.1.0 · 2026-09-24
+
+- Agent tools: `mover_list_sessions` (read-only listing) / `mover_move_session` / `mover_repair_sessions` register into the official `dsh-tools` registry and become callable from the conversation
+- Mutating tools ask through the host approval seam before acting: denial, dismissal, or no answerer means nothing happens (fail-closed)
+- They share the panel's locked, backup-first, post-move-verified pipeline; hosts without `dsh-tools` skip registration
+- `mover.status` gains an `agentTools` capability flag
 
 ### v2.0.3 · 2026-09-21
 

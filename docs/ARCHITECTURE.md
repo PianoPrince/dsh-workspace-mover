@@ -53,6 +53,20 @@ Single logical channel `/workspace-mover` via `ctx.connection.rpc.handle('/works
 
 Errors carry stable codes (`busy`, `conflict`, `not-found`, `rollback-failed`, …). Host logs write failures under `MOVE FAILED`.
 
+## Agent tools (DSH ≥ 0.1.5 with `dsh-tools`)
+
+When the host provides the `tools` service, `apply()` registers three plain (zero-dependency) tool definitions; each tool's execute re-enters the internal RPC dispatch, so agent calls share the panel's locks, error codes, and transaction semantics:
+
+| Tool | Gate | Purpose |
+| --- | --- | --- |
+| `mover_list_sessions` | none (read-only) | Compose scan + workspace list (sessions capped at 40, counts, ghosts, recoveryCount) for id resolution |
+| `mover_move_session` | user approval | Move one session (`sessionId`, `targetWorkspaceId`, optional `sessionTitle`) |
+| `mover_repair_sessions` | user approval | One `mover.repairAll` pass (accounting-only) |
+
+- Mutating tools call `ctx.approval.request({ agent, toolName, reason, signal })` before acting; `allowed-once` proceeds, anything else (`denied` / `cancelled` / `unavailable`) or a throwing seam fails closed. Hosts without the approval seam (no UI) rely on conversational confirmation and proceed.
+- `exec.signal` propagates into the RPC layer; cancellation lets the in-flight step finish rolling back to a consistent state.
+- Hosts without `dsh-tools` skip registration silently; `mover.status` reports the `agentTools` flag.
+
 ## Session archives (v3)
 
 - Naming: `session.v3.jsonl.zstd` or `session.v3.jsonl` (highest generation wins).
@@ -65,8 +79,8 @@ Order of operations for a cross-workspace move:
 
 1. **Running check** — reject only mid-turn sessions (`agents.get(id)?.status === 'running'`); idle resident sessions may move.
 2. **Read authority header** from disk; verify target ≠ source.
-3. **Preflight** — dual-accounting detect, target writability probe, disk-space hint.
-4. **Byte backup** to `$DSH_HOME/workspace-mover/backups/` (rolling 20 per session) **before any side effect**.
+3. **Byte backup** to `$DSH_HOME/workspace-mover/backups/` (rolling 20 per session) **before any side effect** — a backup failure aborts with `backup-failed` and nothing has been touched.
+4. **Preflight** — dual-accounting detect, target writability probe, disk-space hint.
 5. **Rewrite first frame** (header cwd) only.
 6. **Move directory** (Windows: exponential-backoff retry on EPERM; fallback copy+delete).
 7. **In-memory closeout** — invalidate three registry indexes; for resident sessions clear stale persistence-coordinator write state; retarget live header `cwd` before official `attachSession`.

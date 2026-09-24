@@ -8,7 +8,7 @@
   <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.0.3-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.1.0-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="DSH engines" src="https://img.shields.io/badge/DSH-%E2%89%A50.1.5--rc.1-339933" style="height:20px; margin:0 2px;" />
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/PianoPrince/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
     <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" style="height:20px; margin:0 2px;" /></a>
@@ -56,6 +56,7 @@ DeepSeek Harness 侧边栏可以拖拽排序**同一工作区**内的会话，�
 - **🗑️ 回收站与备份**：删除先进回收站，可还原到原位置或任意分组；迁移自动生成备份，可按会话恢复或清理
 - **⏪ 移动历史与撤回**：记录最近 100 次跨工作区移动，批量聚合为一条，整批可一键撤回
 - **📂 空分组清理 / 打开文件夹**：只列出真正零成员的工作区；组菜单可直达系统文件管理器
+- **🤖 Agent 工具**：`mover_list_sessions` / `mover_move_session` / `mover_repair_sessions` 三个模型可调用工具——在对话里说「把这个会话挪到某组」即可触发与面板完全相同的备份回滚管线；迁移与修复执行前经宿主审批弹窗确认，未装 dsh-tools 的宿主自动停用
 
 ## 🚀 安装
 
@@ -153,6 +154,13 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 6. 支持按标题 / 会话 ID / 路径 / 分组筛选；
 7. **已归档 / 回收站 / 备份**：归档可恢复；删除进回收站，可还原或确认后彻底删除；迁移备份可恢复或清理。
 
+### 对话里迁移（Agent 工具）
+
+1. 装有 `dsh-tools` 的宿主（web 默认）自动注册三个模型工具：清单（只读）、迁移、一键修复；
+2. 在对话里说「列出我的会话」「把会话 X 挪到 Y 组」「跑一次修复」——模型先用清单工具把名字解析成精确 id，再执行动作；
+3. 迁移与修复在动手前经宿主审批弹窗请你确认（与面板确认同级）；拒绝或关闭弹窗则不执行；
+4. 宿主没有 `dsh-tools` 时自动停用，不影响面板与拖拽。
+
 ### 批量迁移
 
 1. **Ctrl/Cmd+点击**加入多选，**Shift+点击**组内范围选择，**Esc** 清空；
@@ -192,6 +200,7 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 
 | 插件版本 | 已验证 DeepSeek Harness | Node | 备注 |
 |----------|-------------------------|------|------|
+| 2.1.0 | `0.1.5-rc.1`、`0.1.5-rc.2` | `≥22` | 新增 agent 工具（宿主缺 `dsh-tools` 时自动停用，其余能力不变） |
 | 2.0.3 | `0.1.5-rc.1`、`0.1.5-rc.2` | `≥22` | 真迁移 / 批量 / 救援 / 回收站 / 备份；首次发布 npm |
 | — | `0.1.6-alpha.*` | `≥22` | 尚未正式验证；侧边栏分组与插件热卸载需回归 |
 
@@ -224,6 +233,13 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 - 宿主大版本升级若改变内部结构，相关能力可能降级或需重启后生效；搬家向导在无法安全写入时会在改动任何文件之前中止并提示。
 
 ## 🆕 最近版本
+
+### v2.1.0 · 2026-09-24
+
+- Agent 工具：`mover_list_sessions`（只读清单）/ `mover_move_session`（迁移单个会话）/ `mover_repair_sessions`（一键修复）注册进官方 `dsh-tools`，在对话里即可调用
+- 变更类工具执行前经宿主审批接缝请用户确认：拒绝 / 关闭 / 无应答一律不执行（fail-closed）
+- 与面板共用同一条加锁、先备份、迁移后校验的管线；无 `dsh-tools` 宿主自动跳过注册
+- `mover.status` 新增 `agentTools` 能力位
 
 ### v2.0.3 · 2026-09-21
 
