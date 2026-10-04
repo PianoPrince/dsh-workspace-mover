@@ -111,6 +111,7 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 | Move failed toast | There is a backup and automatic rollback; retry after following the toast. Details are in the host log under `MOVE FAILED` |
 | Move succeeded but sidebar didn't regroup | Refresh the page |
 | Some sessions vanished from the sidebar | Open **Settings → Session Rescue** to scan and recover them |
+| After upgrading to DSH 0.2, switching models on old sessions fails with `Unknown agent preset` | 0.2 no longer reads the 0.1.x legacy custom-preset directory; presets must be migrated to declaration rows — unrelated to this plugin, full steps in [docs/dsh-0.2-preset-migration.md](docs/dsh-0.2-preset-migration.md) |
 
 </details>
 
@@ -228,6 +229,7 @@ Built to coexist: private communication/style namespaces, no rewrites of officia
 - **Other known combination**: dsh-market `1.45.1`. Does not patch DSH source; official extension points only.
 - **Quality gate**: run `npm run check` before opening a PR (syntax + tests + `npm pack --dry-run`); CI runs the same steps on ubuntu / windows / macos × Node 22/24.
 - **Marketplace "host requirement unknown"**: GitHub-only packages without an npm manifest may show unknown — that is metadata, not runtime incompatibility.
+- **DSH 0.2 preset migration**: 0.2 no longer reads the 0.1.x legacy custom-preset directory (`$DSH_HOME\.agent-presets\`); resuming old sessions fails with `Unknown agent preset` (a host change, unrelated to this plugin). Migration steps and a real-world record: [docs/dsh-0.2-preset-migration.md](docs/dsh-0.2-preset-migration.md).
 - **Uninstall is reversible**: removing the plugin does not delete session archives, workspaces, or official bookkeeping. Plugin history/tasks/backups/recycle-bin data stay in the plugin data directory (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)); refresh or restart DSH to clear injected UI.
 - **Coexistence**: do not enable a second cross-workspace drag mover; other categories can follow the table above.
 

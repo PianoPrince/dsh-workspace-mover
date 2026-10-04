@@ -111,6 +111,7 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 | 移动失败的 toast | 操作前有自动备份、失败会回滚；按提示处理后重试。详细原因见宿主日志中的 `MOVE FAILED` |
 | 移动成功但侧边栏没归位 | 刷新页面即可 |
 | 有些会话从侧边栏不见了 | 打开 **设置 → 会话救援** 自动扫描并找回 |
+| 升级 DSH 0.2 后，旧会话切换模型报 `Unknown agent preset` | 0.2 不再读取 0.1.x 旧格式的自定义预设目录，需迁移为声明行——与插件无关，完整步骤见 [docs/dsh-0.2-preset-migration.md](docs/dsh-0.2-preset-migration.md) |
 
 </details>
 
@@ -226,6 +227,7 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 - **其他已知组合**：dsh-market `1.45.1`。不修改 DSH 源码，仅通过官方扩展点接入。
 - **质量门禁**：提交前运行 `npm run check`（语法检查 + 测试 + `npm pack --dry-run`）；CI 在 ubuntu / windows / macos × Node 22/24 上执行同等步骤。
 - **市场卡片的「宿主要求未知」**：GitHub-only 插件没有 npm 发布清单时，dsh-market 可能无法从远端元数据推导宿主版本；显示「未知」**不代表**运行时不兼容。
+- **升级到 DSH 0.2 的预设迁移**：0.2 不再读取 0.1.x 旧格式的自定义预设目录（`$DSH_HOME\.agent-presets\`），旧会话恢复会报 `Unknown agent preset`（与本插件无关，属宿主变更）。迁移步骤与实测记录见 [docs/dsh-0.2-preset-migration.md](docs/dsh-0.2-preset-migration.md)。
 - **卸载可逆**：移除插件不会删除会话档案、工作区或官方记账。插件自己的历史、任务、备份和回收站数据仍保留在插件数据目录（见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)）；移除后刷新或重启 DSH 即可清理注入的界面。
 - **共存建议**：不要与另一个跨工作区拖拽移动器同时启用；其他类型插件可按上表共存。
 
