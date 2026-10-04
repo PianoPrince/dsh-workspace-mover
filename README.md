@@ -86,6 +86,17 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 </details>
 
 <details>
+<summary><b>桌面版安装（DSH v0.2 桌面客户端）</b></summary>
+
+1. 安装并打开官方桌面版，左侧进入「插件」页；
+2. 点右上角「添加插件」，搜索 `dsh-workspace-mover` 安装并启用；
+3. 完成——桌面 profile 与 web profile 相互独立，需要各自安装一次。
+
+> 桌面 profile 由 Electron 应用专属管理（独立 CLI 不接受 `--profile desktop`），请以应用内插件页为准。
+
+</details>
+
+<details>
 <summary><b>常见问题</b></summary>
 
 | 现象 | 原因与解决 |
@@ -200,9 +211,9 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 
 | 插件版本 | 已验证 DeepSeek Harness | Node | 备注 |
 |----------|-------------------------|------|------|
-| 2.1.0 | `0.1.5-rc.1`、`0.1.5-rc.2` | `≥22` | 新增 agent 工具（宿主缺 `dsh-tools` 时自动停用，其余能力不变） |
+| 2.1.0 | `0.1.5-rc.1`、`0.1.5-rc.2`、**`0.2.0 桌面版`**（0.2.0-rc.2 内核） | `≥22` | Agent 工具 + 桌面版实测（拖拽迁移、确认框、热重载修复）；宿主缺 `dsh-tools` 时工具自动停用 |
 | 2.0.3 | `0.1.5-rc.1`、`0.1.5-rc.2` | `≥22` | 真迁移 / 批量 / 救援 / 回收站 / 备份；首次发布 npm |
-| — | `0.1.6-alpha.*` | `≥22` | 尚未正式验证；侧边栏分组与插件热卸载需回归 |
+| — | `0.2.0 web`（0.2.0-rc.2） | `≥22` | 与桌面版同内核，已按同一代码路径适配；web 启动场景待回归 |
 
 - **engines 声明**：`package.json` → `engines.dsh` ≥ `0.1.5-rc.1`，`engines.node` ≥ `22`（与 CI 矩阵 Node 22/24 一致）。
 - **其他已知组合**：dsh-market `1.45.1`。不修改 DSH 源码，仅通过官方扩展点接入。
@@ -234,11 +245,12 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 
 ## 🆕 最近版本
 
-### v2.1.0 · 2026-09-24
+### v2.1.0 · 2026-10-04
 
 - Agent 工具：`mover_list_sessions`（只读清单）/ `mover_move_session`（迁移单个会话）/ `mover_repair_sessions`（一键修复）注册进官方 `dsh-tools`，在对话里即可调用
 - 变更类工具执行前经宿主审批接缝请用户确认：拒绝 / 关闭 / 无应答一律不执行（fail-closed）
 - 与面板共用同一条加锁、先备份、迁移后校验的管线；无 `dsh-tools` 宿主自动跳过注册
+- 桌面版（0.2）实测通过：修复热重载后「inactive context」移动报错；确认框改为不透明，不再与底层文字重叠
 - `mover.status` 新增 `agentTools` 能力位
 
 ### v2.0.3 · 2026-09-21

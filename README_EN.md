@@ -86,6 +86,17 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 </details>
 
 <details>
+<summary><b>Desktop app install (DSH v0.2 desktop client)</b></summary>
+
+1. Install and open the official desktop app, go to the 「插件」/ Plugins page in the left menu;
+2. Click "Add plugin" and search for `dsh-workspace-mover`, then install and enable it;
+3. Done — the desktop profile is independent from the web profile, so install once per profile.
+
+> The desktop profile is managed exclusively by the Electron application (the standalone CLI rejects `--profile desktop`); use the in-app plugin page.
+
+</details>
+
+<details>
 <summary><b>Troubleshooting</b></summary>
 
 | Symptom | What to do |
@@ -202,9 +213,9 @@ Built to coexist: private communication/style namespaces, no rewrites of officia
 
 | Plugin version | Verified DeepSeek Harness | Node | Notes |
 |----------------|---------------------------|------|-------|
-| 2.1.0 | `0.1.5-rc.1`, `0.1.5-rc.2` | `≥22` | Agent tools added (auto-skipped on hosts without `dsh-tools`; everything else unchanged) |
+| 2.1.0 | `0.1.5-rc.1`, `0.1.5-rc.2`, **`0.2.0 desktop`** (0.2.0-rc.2 core) | `≥22` | Agent tools + desktop verified in real use (drag move, confirm dialog, hot-reload fix); tools auto-skip on hosts without `dsh-tools` |
 | 2.0.3 | `0.1.5-rc.1`, `0.1.5-rc.2` | `≥22` | True move / bulk / rescue / recycle bin / backups; first npm publish |
-| — | `0.1.6-alpha.*` | `≥22` | Not yet verified; sidebar grouping and plugin hot-unload need regression |
+| — | `0.2.0 web` (0.2.0-rc.2) | `≥22` | Same core as the desktop build, adapted on the same code paths; web boot regression pending |
 
 - **Engines**: `package.json` → `engines.dsh` ≥ `0.1.5-rc.1`, `engines.node` ≥ `22` (aligned with the CI Node 22/24 matrix).
 - **Other known combination**: dsh-market `1.45.1`. Does not patch DSH source; official extension points only.
@@ -236,11 +247,12 @@ Some advanced actions need newer DSH capabilities; when unavailable the UI says 
 
 ## 🆕 Recent version
 
-### v2.1.0 · 2026-09-24
+### v2.1.0 · 2026-10-04
 
 - Agent tools: `mover_list_sessions` (read-only listing) / `mover_move_session` / `mover_repair_sessions` register into the official `dsh-tools` registry and become callable from the conversation
 - Mutating tools ask through the host approval seam before acting: denial, dismissal, or no answerer means nothing happens (fail-closed)
 - They share the panel's locked, backup-first, post-move-verified pipeline; hosts without `dsh-tools` skip registration
+- Desktop (0.2) verified in real use: fixed the post-hot-reload "inactive context" move error, and the confirm dialog is now opaque instead of blending with the text underneath
 - `mover.status` gains an `agentTools` capability flag
 
 ### v2.0.3 · 2026-09-21
