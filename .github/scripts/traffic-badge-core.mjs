@@ -102,6 +102,7 @@ export function buildState(previousState, rows, snapshot, collectedAt = new Date
 		schemaVersion: 2,
 		observedSince: previous.schemaVersion === 2 && previous.observedSince ? previous.observedSince : (rows[0]?.date ?? collectedAt.slice(0, 10)),
 		cumulativeClones: rows.reduce((sum, row) => sum + row.count, 0),
+		cumulativeUniques: rows.reduce((sum, row) => sum + row.uniques, 0),
 		lastWindow: {
 			count: snapshot.count,
 			uniques: snapshot.uniques,
@@ -117,10 +118,10 @@ export function buildState(previousState, rows, snapshot, collectedAt = new Date
 
 export function buildBadgeFiles(state) {
 	const badge = (label, message) => JSON.stringify({ schemaVersion: 1, label, message, color: 'blue' });
-	const uniques = state.lastWindow?.uniques;
-	// GitHub 的按天 uniques 跨天相加会把重复克隆者重复计数，得不出真去重的累计值——
-	// 徽章上的 uniques 因此永远是最近 14 天窗口的值，后缀 (14d) 消除"累计"歧义。
-	const uniqueSuffix = typeof uniques === 'number' && Number.isFinite(uniques) ? ` · ${uniques} unique (14d)` : '';
+	// 按用户口径：uniques 展示观测起点以来的累计值（rows 按日期去重合并，不重复计数）。
+	// 注意这是"按天去重人数之和"，跨天重复的克隆者会被重复计入——GitHub 不提供跨天去重的真值。
+	const uniques = state.cumulativeUniques;
+	const uniqueSuffix = typeof uniques === 'number' && Number.isFinite(uniques) ? ` · ${uniques} unique` : '';
 	return {
 		'wsm-clones-total.json': { content: badge('GitHub clones observed', `${state.cumulativeClones} since ${state.observedSince}${uniqueSuffix}`) }
 	};

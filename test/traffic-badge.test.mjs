@@ -55,13 +55,13 @@ test('schema migration preserves the old value as a legacy estimate only', () =>
 	assert.equal(state.lastWindow.count, 12);
 });
 
-test('badge exposes only observed GitHub clones and 14d uniques', () => {
+test('badge exposes cumulative clones and cumulative uniques since the observation start', () => {
 	const state = buildState({}, parseHistory('{"date":"2026-09-08","count":5,"uniques":3}\n{"date":"2026-09-09","count":7,"uniques":4}\n'), normalizeClonesResponse(snapshot), '2026-09-10T00:00:00Z');
+	assert.equal(state.cumulativeUniques, 7);
 	const files = buildBadgeFiles(state);
 	const total = JSON.parse(files['wsm-clones-total.json'].content);
 	assert.equal(total.label, 'GitHub clones observed');
-	assert.match(total.message, /12 since 2026-09-08/);
-	assert.match(total.message, /7 unique \(14d\)/);
+	assert.equal(total.message, '12 since 2026-09-08 · 7 unique');
 	assert.equal(files['wsm-clones-14d.json'], undefined);
 });
 
