@@ -54,7 +54,9 @@ DeepSeek Harness's sidebar supports drag-to-reorder **within** a workspace, but 
 - **🏠 Move-home wizard**: after a project folder was moved or renamed, re-point the broken workspace in place; id, title, order, and archive flags stay, and member sessions plus strays migrate together
 - **🛟 Session rescue** (Settings → Session Rescue): recover lost / unregistered / misfiled sessions; restore archived sessions; one-click repair and filtering
 - **🗑️ Recycle bin and backups**: deletes go to the recycle bin first and can be restored; every move creates a backup you can restore or clean up
+- **🛡️ Data protection**: recycle bin and backup counts / footprint at a glance; "clean data older than 30 days" previews the freed space before asking for confirmation
 - **⏪ Move history and undo**: last 100 cross-workspace moves; bulk operations aggregate into one undoable entry
+- **🧾 Task center**: bulk moves persist per-item state (done/failed, last error and attempt time); failed items retry in one click — from each session's CURRENT location, never a stale path
 - **📂 Empty-group cleanup / open folder**: only truly empty workspaces are listed; open a group directory in your file manager
 - **🤖 Agent tools**: three model-callable tools — `mover_list_sessions` / `mover_move_session` / `mover_repair_sessions` — so "move this session to group X" in the conversation runs the same backup-first pipeline as the panel; mutating tools ask for user approval first, and hosts without `dsh-tools` skip them automatically
 
@@ -167,7 +169,7 @@ Mid-turn sessions are rejected; failed moves roll back automatically.
 
 ### Conversational moves (agent tools)
 
-1. Hosts with `dsh-tools` (web by default) register three model tools: listing (read-only), move, and one-click repair;
+1. Hosts with `dsh-tools` (web and desktop by default) register three model tools: listing (read-only), move, and one-click repair;
 2. Say "list my sessions", "move session X to group Y", or "run a repair" — the model resolves names into exact ids with the listing tool first, then acts;
 3. Mutating tools raise a host approval prompt before acting (same level as the panel confirm); dismissing or denying means nothing happens;
 4. Hosts without `dsh-tools` skip the tools automatically — the panel and drag flows are unaffected.
@@ -201,8 +203,10 @@ Built to coexist: private communication/style namespaces, no rewrites of officia
 
 | Plugin category | Compatibility | Notes |
 | --- | --- | --- |
+| Official built-in plugins (the eight shipped since 0.2: terminal / web search / subagents / …) | ✅ No conflict | Disjoint feature surfaces; agent tools coexist through the official `dsh-tools` registry — this plugin's tools are namespaced with a `mover_` prefix |
 | Sidebar enhancements / better-sidebar / terminals / cost meters / memory / export & share | ✅ No conflict | Different panels and data surfaces |
 | Archive managers | ✅ Compatible | Both use official archive data; panel features may overlap |
+| Recycle-bin / session-delete plugins | ✅ Isolated data | Each plugin keeps its own recycle-bin directory, none shared; enable one delete entry point to avoid confusion |
 | Sort / pin plugins | ⚠️ Mostly compatible | Moves re-sort "Recently updated" precisely; display order in other plugins may differ slightly |
 | Plugins that redraw the sidebar | ⚠️ Graceful degradation | If the official sidebar structure is replaced, features may stop triggering — **no data damage** |
 | Other session movers | ❌ Pick one | Two drag interceptors can double-handle one drag; this plugin covers move / bulk / merge / homing / archive restore |
