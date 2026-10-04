@@ -9,6 +9,10 @@
 - `mover.status` reports an `agentTools` capability flag.
 - Tests 97 → 104 (tool registration and capability flag, listing composition, approval-gated move success, fail-closed outcomes for denied / cancelled / unavailable / seam-error, error-code passthrough with no approval round-trip for invalid input, repair with approval).
 
+### Fixed
+
+- **Desktop (0.2) hot-reload no longer breaks moves.** The client half accessed `ctx.connection` lazily on every RPC. After the desktop app hot-reloads or recomposes its client, the plugin's old cordis fiber is disposed, and that access throws `cannot get required service "connection" in inactive context` — surfacing as a failed-move toast even though nothing was wrong with the session. The connection service instance is now captured once at apply time (while the context is active) and reused for every call; if capture is not possible, a clear "refresh the page" message replaces the internal error in both the drag toast and the rescue-panel note paths (new `contextStale` strings, zh/en).
+
 ## [2.0.3] - 2026-09-21
 
 ### Engineering

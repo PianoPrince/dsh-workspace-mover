@@ -129,6 +129,7 @@ window.__ModuleLoader__.load({
 				backupDeletedMsg: "✓ 已删除 {n} 份备份",
 				residentRefuse: "该会话当前没有焦点也可能仍驻留在 Harness 内存中（归档只隐藏，不会卸载）。DSH 0.1.5 没有公开的按 ID 卸载接口，请重启 Harness 释放常驻会话后再删除。",
 				sessionBusy: "该会话正在处理中（可能有迁移 / 还原 / 删除操作尚未完成），请稍后再试。",
+				contextStale: "插件上下文已失效（客户端热重载导致）。请刷新页面（或重启应用）后重试，功能会自动恢复。",
 				recoveryNote: "检测到 {n} 条自动回滚也失败的记录，需人工确认：会话文件与备份均保留在原处，未丢失。请勿手动清理 pluginData 目录，查看 recovery.json 或联系开发者处理。",
 				repairAllBtn: "一键修复",
 				repairAllDone: "✓ 已修复 {n} · 跳过 {s} · 失败 {f}",
@@ -259,6 +260,7 @@ window.__ModuleLoader__.load({
 				backupDeletedMsg: "✓ Deleted {n} backup copy(ies)",
 				residentRefuse: "This session may remain resident in harness memory even when it is not focused (archiving hides it but does not unload it). DSH 0.1.5 exposes no public unload-by-ID API; restart the harness to release it, then delete it again.",
 				sessionBusy: "This session is busy: a move / restore / delete is still in flight. Try again in a moment.",
+				contextStale: "The plugin context went stale (client-side hot reload). Refresh the page (or restart the app) and the features will work again.",
 				recoveryNote: "{n} record(s) need manual recovery: automatic rollback also failed. Session files and backups are all kept in place — nothing was lost. Do not clean the pluginData directory by hand; inspect recovery.json or contact the developer.",
 				repairAllBtn: "Fix all",
 				repairAllDone: "✓ Fixed {n} · skipped {s} · failed {f}",
@@ -282,6 +284,12 @@ window.__ModuleLoader__.load({
 			let s = STRINGS[lang][key] ?? key;
 			for (const [k, v] of Object.entries(vars ?? {})) s = s.replaceAll(`{${k}}`, String(v));
 			return s;
+		};
+		// 桌面版热重载后旧 fiber 上的服务访问会抛 cordis 的 "inactive context"——
+		// 换成可操作的提示文案，而不是让用户面对内部术语。
+		const errMsg = (err) => {
+			const raw = String(err?.message ?? err);
+			return /inactive context/.test(raw) ? t("contextStale") : raw;
 		};
 
 		function ensureStyle() {
@@ -656,7 +664,7 @@ window.__ModuleLoader__.load({
 					setBackups(bp);
 					setTasks(tk);
 				} catch (err) {
-					setNote(t("failed", { msg: err?.message ?? err }));
+					setNote(t("failed", { msg: errMsg(err) }));
 				} finally {
 					setBusy(false);
 				}
@@ -882,9 +890,12 @@ window.__ModuleLoader__.load({
 			// 失败双通道：面板底部 note + toast 浮层（note 在长列表里容易被错过）
 			const failNote = (err) => {
 				const raw = String(err?.message ?? err);
-				const busy = err?.code === "busy" || /resident in memory/.test(raw);
-				const msg = !busy ? t("failed", { msg: raw })
-					: /resident in memory/.test(raw) ? t("residentRefuse") : t("sessionBusy");
+				const stale = /inactive context/.test(raw);
+				const resident = /resident in memory/.test(raw);
+				const busy = (err?.code === "busy" || resident) && !stale;
+				const msg = stale ? t("contextStale")
+					: !busy ? t("failed", { msg: raw })
+					: resident ? t("residentRefuse") : t("sessionBusy");
 				setNote(msg);
 				toast(msg, true);
 			};
@@ -1371,7 +1382,20 @@ window.__ModuleLoader__.load({
 		var inject = ["connection", "slots"];
 
 		function apply(ctx) {
-			const rpcCall = (endpoint, payload) => ctx.connection.rpc.call(CHANNEL, endpoint, payload ?? {});
+			// 在 apply（上下文必然活跃）时立即捕获 connection 服务实例本身，而不是持有 ctx
+			// 做惰性访问：桌面版会在热重载 / 客户端重组时废弃本插件的旧 fiber，此后
+			// ctx.connection 会抛 "cannot get required service 'connection' in inactive context"
+			//（cordis 对已失活 fiber 的 inject 属性一律拒绝）。捕获到的实例由提供方
+			// 插件（dsh-client-connection）持有，不受本插件 fiber 存亡影响。
+			let connection = null;
+			try { connection = ctx.connection; } catch { /* 上下文未就绪：rpcCall 内兜底重取 */ }
+			const rpcCall = (endpoint, payload) => {
+				if (!connection) {
+					try { connection = ctx.connection; } catch { /* 仍然失活：走下面的友好报错 */ }
+				}
+				if (!connection) throw new Error(t("contextStale"));
+				return connection.rpc.call(CHANNEL, endpoint, payload ?? {});
+			};
 			let dragging = null; // {el, els, id, target} —— id/target 在 drop 阶段解析
 			let wsCache = null; // {items, at}
 
@@ -1576,7 +1600,7 @@ window.__ModuleLoader__.load({
 					}
 					refreshPickVisuals();
 				} catch (err) {
-					toast(t("failed", { msg: err?.message ?? err }), true);
+					toast(t("failed", { msg: errMsg(err) }), true);
 				}
 			}, true);
 
@@ -1701,7 +1725,7 @@ window.__ModuleLoader__.load({
 						}
 					}
 				} catch (err) {
-					return void toast(t("failed", { msg: err?.message ?? err }), true);
+					return void toast(t("failed", { msg: errMsg(err) }), true);
 				}
 				if (!workspace) return void toast(t("noTarget"), true);
 
@@ -1747,7 +1771,7 @@ window.__ModuleLoader__.load({
 							toast(text, true);
 						}
 					} catch (err) {
-						toast(t("failed", { msg: err?.message ?? err }), true);
+						toast(t("failed", { msg: errMsg(err) }), true);
 					}
 					return;
 				}
@@ -1772,7 +1796,7 @@ window.__ModuleLoader__.load({
 					clearSelection(true);
 					scheduleRecencyFix(ctx, workspace.workspaceId, sessions.map((s) => s.sessionId));
 				} catch (err) {
-					toast(t("failed", { msg: err?.message ?? err }), true);
+					toast(t("failed", { msg: errMsg(err) }), true);
 				}
 			}, true);
 
@@ -1821,7 +1845,7 @@ window.__ModuleLoader__.load({
 						}
 					} catch { /* 合并删除为可选步骤，失败静默 */ }
 				} catch (err) {
-					toast(t("failed", { msg: err?.message ?? err }), true);
+					toast(t("failed", { msg: errMsg(err) }), true);
 				}
 			}
 
@@ -1867,7 +1891,7 @@ window.__ModuleLoader__.load({
 						const res = await rpcCall("mover.openFolder", { workspaceId: ws.workspaceId, path: ws.path });
 						if (!res?.ok) toast(t("failed", { msg: res?.error?.message ?? "open failed" }), true);
 					} catch (err) {
-						toast(t("failed", { msg: err?.message ?? err }), true);
+						toast(t("failed", { msg: errMsg(err) }), true);
 					}
 				});
 				const danger = items.find((it) => /danger/i.test(it.className || ""));
