@@ -1,7 +1,7 @@
 // Daily GitHub traffic collection for the public README badges.
 // GitHub exposes a rolling 14-day window; the daily rows are persisted in a Gist.
 import { sanitizeGistPatchFiles } from './release-downloads-core.mjs';
-import { buildBadgeFiles, buildState, mergeHistory, normalizeClonesResponse, normalizePathsResponse, normalizeReferrersResponse, normalizeViewsResponse, parseHistory } from './traffic-badge-core.mjs';
+import { buildBadgeFiles, buildState, buildStructuredDaily, mergeHistory, normalizeClonesResponse, normalizePathsResponse, normalizeReferrersResponse, normalizeViewsResponse, parseHistory } from './traffic-badge-core.mjs';
 
 const REPO = process.env.REPO ?? 'PianoPrince/dsh-workspace-mover';
 const GIST_ID = process.env.GIST_ID ?? 'c14345658550a4a308570acfbaf9d170';
@@ -78,10 +78,7 @@ try {
 } catch {
 	// Start a new structured history file if the previous one is malformed.
 }
-const dailyByDate = new Map((Array.isArray(trafficHistory.daily) ? trafficHistory.daily : []).map((row) => [row.date, row]));
-for (const day of snapshot.days) dailyByDate.set(day.date, { ...dailyByDate.get(day.date), date: day.date, clones: day });
-for (const day of viewsSnapshot.days) dailyByDate.set(day.date, { ...dailyByDate.get(day.date), date: day.date, views: day });
-trafficHistory.daily = [...dailyByDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+trafficHistory.daily = buildStructuredDaily(trafficHistory.daily, previousHistory, snapshot.days, viewsSnapshot.days);
 trafficHistory.popularSnapshots = Array.isArray(trafficHistory.popularSnapshots) ? trafficHistory.popularSnapshots : [];
 trafficHistory.popularSnapshots.push({ collectedAt: state.updatedAt, referrers: referrersSnapshot, paths: pathsSnapshot });
 trafficHistory.updatedAt = state.updatedAt;

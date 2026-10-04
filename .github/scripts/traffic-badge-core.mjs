@@ -118,8 +118,27 @@ export function buildState(previousState, rows, snapshot, collectedAt = new Date
 export function buildBadgeFiles(state) {
 	const badge = (label, message) => JSON.stringify({ schemaVersion: 1, label, message, color: 'blue' });
 	const uniques = state.lastWindow?.uniques;
-	const uniqueSuffix = typeof uniques === 'number' && Number.isFinite(uniques) ? ` · ${uniques} unique` : '';
+	// GitHub 的按天 uniques 跨天相加会把重复克隆者重复计数，得不出真去重的累计值——
+	// 徽章上的 uniques 因此永远是最近 14 天窗口的值，后缀 (14d) 消除"累计"歧义。
+	const uniqueSuffix = typeof uniques === 'number' && Number.isFinite(uniques) ? ` · ${uniques} unique (14d)` : '';
 	return {
 		'wsm-clones-total.json': { content: badge('GitHub clones observed', `${state.cumulativeClones} since ${state.observedSince}${uniqueSuffix}`) }
 	};
+}
+
+/**
+ * 结构化每日历史（wsm-traffic-history.json 的 daily）的合并：
+ * ① 已有行保留（含 views）；② JSONL 历史里更早的天补进 clones-only 行（v1.4.1
+ * 迁移时结构化文件只带保留窗口，起点比 JSONL 晚）；③ 当日 API 快照按 clones/views 覆盖。
+ */
+export function buildStructuredDaily(existingDaily, historyRows, cloneDays, viewDays) {
+	const byDate = new Map((Array.isArray(existingDaily) ? existingDaily : []).map((row) => [row.date, row]));
+	for (const row of historyRows ?? []) {
+		if (!byDate.has(row.date)) {
+			byDate.set(row.date, { date: row.date, clones: { date: row.date, count: row.count, uniques: row.uniques } });
+		}
+	}
+	for (const day of cloneDays) byDate.set(day.date, { ...byDate.get(day.date), date: day.date, clones: day });
+	for (const day of viewDays) byDate.set(day.date, { ...byDate.get(day.date), date: day.date, views: day });
+	return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
 }

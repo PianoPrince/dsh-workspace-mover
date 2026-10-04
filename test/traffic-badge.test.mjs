@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildBadgeFiles, buildState, mergeHistory, normalizeClonesResponse, normalizePathsResponse, normalizeReferrersResponse, normalizeViewsResponse, parseHistory } from '../.github/scripts/traffic-badge-core.mjs';
+import { buildBadgeFiles, buildState, buildStructuredDaily, mergeHistory, normalizeClonesResponse, normalizePathsResponse, normalizeReferrersResponse, normalizeViewsResponse, parseHistory } from '../.github/scripts/traffic-badge-core.mjs';
 
 const snapshot = {
 	count: 12,
@@ -61,6 +61,20 @@ test('badge exposes only observed GitHub clones and 14d uniques', () => {
 	const total = JSON.parse(files['wsm-clones-total.json'].content);
 	assert.equal(total.label, 'GitHub clones observed');
 	assert.match(total.message, /12 since 2026-09-08/);
-	assert.match(total.message, /7 unique/);
+	assert.match(total.message, /7 unique \(14d\)/);
 	assert.equal(files['wsm-clones-14d.json'], undefined);
+});
+
+test('structured daily backfills JSONL-only early days without clobbering views', () => {
+	const existing = [{ date: '2026-09-09', clones: { date: '2026-09-09', count: 7, uniques: 4 }, views: { date: '2026-09-09', count: 2, uniques: 1 } }];
+	const historyRows = parseHistory('{"date":"2026-09-07","count":1,"uniques":1}\n{"date":"2026-09-08","count":5,"uniques":3}\n{"date":"2026-09-09","count":99,"uniques":99}\n');
+	const cloneDays = [{ date: '2026-09-09', count: 7, uniques: 4 }];
+	const viewDays = [{ date: '2026-09-09', count: 2, uniques: 1 }];
+	const daily = buildStructuredDaily(existing, historyRows, cloneDays, viewDays);
+	assert.deepEqual(daily.map((row) => row.date), ['2026-09-07', '2026-09-08', '2026-09-09']);
+	assert.deepEqual(daily[0].clones, { date: '2026-09-07', count: 1, uniques: 1 });
+	assert.equal(daily[0].views, undefined, 'JSONL 回填行没有 views 数据');
+	// JSONL 与快照冲突时快照优先：09-09 保持 7/4，且 views 不丢
+	assert.deepEqual(daily[2].clones, { date: '2026-09-09', count: 7, uniques: 4 });
+	assert.deepEqual(daily[2].views, { date: '2026-09-09', count: 2, uniques: 1 });
 });
