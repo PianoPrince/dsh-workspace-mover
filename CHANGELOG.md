@@ -11,6 +11,7 @@
 
 ### Fixed
 
+- **Opaque confirm dialog on the desktop (0.2).** The desktop theme defines `--dsw-specific-menu` as a translucent glass color, so the cross-workspace confirm card blended with the text underneath. The card now forces the themed color to full alpha via CSS relative-color syntax (browsers without support keep the previous translucent behavior).
 - **Desktop (0.2) hot-reload no longer breaks moves.** The client half accessed `ctx.connection` lazily on every RPC. After the desktop app hot-reloads or recomposes its client, the plugin's old cordis fiber is disposed, and that access throws `cannot get required service "connection" in inactive context` — surfacing as a failed-move toast even though nothing was wrong with the session. The connection service instance is now captured once at apply time (while the context is active) and reused for every call; if capture is not possible, a clear "refresh the page" message replaces the internal error in both the drag toast and the rescue-panel note paths (new `contextStale` strings, zh/en).
 
 ## [2.0.3] - 2026-09-21

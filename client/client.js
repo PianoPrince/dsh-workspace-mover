@@ -304,7 +304,10 @@ window.__ModuleLoader__.load({
 .wsm-pick-badge{flex:none;font-size:10px;line-height:1;padding:2px 6px;border-radius:99px;background:var(--dsw-alias-state-business-primary,#4176e6);color:var(--dsw-alias-label-primary-foreground,#fff);pointer-events:none}
 .wsm-batch-count{position:fixed;left:12px;bottom:12px;z-index:2147483500;background:var(--dsw-alias-bg-layer-2,#fff);color:var(--dsw-alias-label-primary,#111);border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:10px;padding:8px 14px;font-size:12.5px;box-shadow:0 8px 24px rgba(0,0,0,.15)}
 .wsm-overlay{position:fixed;inset:0;background:var(--dsw-alias-bg-mask-1,rgba(0,0,0,.35));z-index:2147483000;display:flex;align-items:center;justify-content:center;font-family:inherit}
-.wsm-card{background:var(--dsw-specific-menu,#fff);color:var(--dsw-alias-label-primary,#111);
+			.wsm-card{background:var(--dsw-specific-menu,#fff);color:var(--dsw-alias-label-primary,#111);
+ /* 桌面版主题的 --dsw-specific-menu 是半透明玻璃色，浮层会和底层文字重叠——
+    支持相对颜色语法的浏览器强制 alpha=1（不透明），旧内核保留上一行原样 */
+ background:rgb(from var(--dsw-specific-menu,#fff) r g b / 1);
  border:1px solid var(--dsw-alias-border-l3,rgba(0,0,0,.12));border-radius:14px;min-width:340px;max-width:440px;
  padding:18px 20px;box-shadow:0 12px 40px rgba(0,0,0,.25)}
 .wsm-title{font-size:15px;font-weight:600;margin-bottom:12px}
