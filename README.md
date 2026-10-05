@@ -7,11 +7,9 @@
 <div align="center">
   <b style="font-size: 1.15em;">在侧边栏把会话拖到另一个工作区——真迁移原始档案，而不是复制</b><br /><br />
   <p style="font-size: 0; line-height: 1;">
-    <a href="dsh://plugin/install?id=dsh-workspace-mover&name=dsh-workspace-mover&version=2.1.1&repo=PianoPrince%2Fdsh-workspace-mover&permissions=%E6%9C%AC%E5%9C%B0%E4%BC%9A%E8%AF%9D%E6%96%87%E4%BB%B6%E8%AF%BB%E5%86%99%2C%E5%B7%A5%E4%BD%9C%E5%8C%BA%E8%AE%B0%E8%B4%A6%E5%8F%98%E6%9B%B4&downloadUrl=https%3A%2F%2Fgithub.com%2FPianoPrince%2Fdsh-workspace-mover%2Farchive%2Frefs%2Fheads%2Fmain.zip">
-      <img src="https://img.shields.io/badge/DeepSeek%20Harness-%F0%9F%9A%80%20%E5%94%A4%E8%B5%B7%E6%A1%8C%E9%9D%A2%E5%AE%A2%E6%88%B7%E7%AB%AF%E4%B8%80%E9%94%AE%E5%AE%89%E8%A3%85-10B981?style=for-the-badge&logo=deepseek&logoColor=white" alt="唤起桌面客户端一键安装" />
-    </a>
+    <code style="font-size:14px">dsh plugin --profile web add dsh-workspace-mover</code>
   </p>
-  <p style="font-size:12px;color:var(--dsw-alias-label-tertiary,#999)">官方桌面客户端对该深链目前降级为聚焦窗口；Hub 系第三方客户端支持完整安装流程。</p>
+  <p style="font-size:12px;color:var(--dsw-alias-label-tertiary,#999)">桌面版在应用内「插件」页搜索安装 · <a href="#-安装">更多渠道</a> · GitHub 会剥离 <code>dsh://</code> 深链，一键安装请从 <a href="https://www.dsh.so/artifact/dsh-workspace-mover/">dsh.so 频道</a>进入</p>
   <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
@@ -278,7 +276,7 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 ### v2.1.1 · 2026-10-05
 
 - `mover.doctor` 自检：面板新增「自检」按钮 + `mover_doctor` 模型工具——服务、数据目录、恢复记录、工作区路径约 13 项检查，pass/warn/fail 三态汇报，DSH 升级后先自检再动手
-- 信任资产：`dsh://` 一键安装深链按钮、dsh.so 风险徽章（已收录且 L5 实测 / risk low）、dsh-plugin-registry 收录徽章、"DSH tested 0.2.0-rc.2" 徽章
+- 信任资产：tagline 下突出 npm 一行安装命令（`dsh://` 深链按钮因 GitHub 剥离自定义协议而移除）、dsh.so 风险徽章（已收录且 L5 实测 / risk low）、dsh-plugin-registry 收录徽章、"DSH tested 0.2.0-rc.2" 徽章
 - 兼容性报告：`docs/compatibility/` 落地桌面版实测记录，此后每适配一个 DSH 版本新增带日期报告
 - 安全承诺章节品牌化为「安全台账（Safety Ledger）」+ never-does 清单
 

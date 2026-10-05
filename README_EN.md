@@ -6,12 +6,11 @@
 <!-- Hero -->
 <div align="center">
   <b style="font-size: 1.15em;">Drag a session onto another workspace in the sidebar—a true move of the original archive, not a copy</b><br /><br />
-  <p style="font-size: 0; line-height: 1;">
-    <a href="dsh://plugin/install?id=dsh-workspace-mover&name=dsh-workspace-mover&version=2.1.1&repo=PianoPrince%2Fdsh-workspace-mover&permissions=Local%20session%20file%20access%2CWorkspace%20accounting%20changes&downloadUrl=https%3A%2F%2Fgithub.com%2FPianoPrince%2Fdsh-workspace-mover%2Farchive%2Frefs%2Fheads%2Fmain.zip">
-      <img src="https://img.shields.io/badge/DeepSeek%20Harness-%F0%9F%9A%80%20One--click%20install%20via%20desktop%20client-10B981?style=for-the-badge&logo=deepseek&logoColor=white" alt="One-click install via desktop client" />
-    </a>
+<p style="font-size: 0; line-height: 1;">
+    <code style="font-size:14px">dsh plugin --profile web add dsh-workspace-mover</code>
   </p>
-  <p style="font-size:12px;color:var(--dsh-alias-label-tertiary,#999)">The official desktop client currently degrades this deep link to window focus; Hub-based third-party clients run the full install flow.</p>
+
+<p style="font-size:12px;color:var(--dsw-alias-label-tertiary,#999)">Desktop app: search "dsh-workspace-mover" on the in-app Plugins page · <a href="#-install">more channels</a> · GitHub strips <code>dsh://</code> deep links — for one-click install enter through the <a href="https://www.dsh.so/artifact/dsh-workspace-mover/">dsh.so channel</a></p>
   <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
@@ -280,7 +279,7 @@ Every migration runs through the same safety-bounded pipeline: **byte-level back
 ### v2.1.1 · 2026-10-05
 
 - `mover.doctor` self-check: a "Doctor" button in the rescue panel plus a `mover_doctor` agent tool — ~13 checks over host services, data directories, recovery records and workspace paths, reported as pass/warn/fail; run it after a DSH upgrade before attempting anything else
-- Trust assets: `dsh://` one-click install deep-link button, dsh.so risk badge (listed, L5 run-tested / risk low), dsh-plugin-registry badge, "DSH tested 0.2.0-rc.2" badge
+- Trust assets: the npm one-liner featured under the tagline (the `dsh://` deep-link button was removed — GitHub strips custom-protocol links), dsh.so risk badge (listed, L5 run-tested / risk low), dsh-plugin-registry badge, "DSH tested 0.2.0-rc.2" badge
 - Compatibility report: `docs/compatibility/` records the desktop verification; every future DSH adaptation adds a dated copy
 - Security section rebranded as **Safety Ledger** with an explicit never-does list
 
@@ -304,3 +303,4 @@ Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## License
 
 MIT
+
