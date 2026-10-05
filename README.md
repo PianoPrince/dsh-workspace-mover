@@ -7,9 +7,16 @@
 <div align="center">
   <b style="font-size: 1.15em;">在侧边栏把会话拖到另一个工作区——真迁移原始档案，而不是复制</b><br /><br />
   <p style="font-size: 0; line-height: 1;">
+    <a href="dsh://plugin/install?id=dsh-workspace-mover&name=dsh-workspace-mover&version=2.1.0&repo=PianoPrince%2Fdsh-workspace-mover&permissions=%E6%9C%AC%E5%9C%B0%E4%BC%9A%E8%AF%9D%E6%96%87%E4%BB%B6%E8%AF%BB%E5%86%99%2C%E5%B7%A5%E4%BD%9C%E5%8C%BA%E8%AE%B0%E8%B4%A6%E5%8F%98%E6%9B%B4&downloadUrl=https%3A%2F%2Fgithub.com%2FPianoPrince%2Fdsh-workspace-mover%2Farchive%2Frefs%2Fheads%2Fmain.zip">
+      <img src="https://img.shields.io/badge/DeepSeek%20Harness-%F0%9F%9A%80%20%E5%94%A4%E8%B5%B7%E6%A1%8C%E9%9D%A2%E5%AE%A2%E6%88%B7%E7%AB%AF%E4%B8%80%E9%94%AE%E5%AE%89%E8%A3%85-10B981?style=for-the-badge&logo=deepseek&logoColor=white" alt="唤起桌面客户端一键安装" />
+    </a>
+  </p>
+  <p style="font-size:12px;color:var(--dsw-alias-label-tertiary,#999)">官方桌面客户端对该深链目前降级为聚焦窗口；Hub 系第三方客户端支持完整安装流程。</p>
+  <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.1.0-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.2.0-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="DSH tested 0.2.0-rc.2" src="https://img.shields.io/badge/DSH_tested-0.2.0--rc.2-4c8dff" style="height:20px; margin:0 2px;" />
     <img alt="DSH engines" src="https://img.shields.io/badge/DSH-%E2%89%A50.1.5--rc.1-339933" style="height:20px; margin:0 2px;" />
     <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
     <img alt="npm 依赖：0" src="https://img.shields.io/badge/npm%20%E4%BE%9D%E8%B5%96-0-4d6bfe" style="height:20px; margin:0 2px;" />
@@ -18,6 +25,8 @@
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/PianoPrince/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
     <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://awesome-dsh-plugin.com"><img alt="Awesome DSH Plugin" src="https://awesome-dsh-plugin.com/badge.svg" style="height:20px; margin:0 2px;" /></a>
+    <a href="https://www.dsh.so/artifact/dsh-workspace-mover/"><img alt="dsh.so risk: low" src="https://www.dsh.so/badge/dsh-workspace-mover.svg" style="height:20px; margin:0 2px;" /></a>
+    <a href="https://github.com/XingLingQAQ/dsh-plugin-registry"><img alt="Listed in dsh-plugin-registry" src="https://img.shields.io/badge/registry-dsh--plugin--registry-2d6a8f" style="height:20px; margin:0 2px;" /></a>
     <img alt="真迁移" src="https://img.shields.io/badge/-真迁移-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="零 token 消耗" src="https://img.shields.io/badge/-零%20token%20消耗-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="备份回滚" src="https://img.shields.io/badge/-备份回滚-4d6bfe" style="height:20px; margin:0 2px;" />
@@ -41,7 +50,7 @@
 - [🔌 如何接入 DSH](#-如何接入-dsh)
 - [🤝 与其他插件共存](#-与其他插件共存)
 - [🧩 兼容性与卸载](#-兼容性与卸载)
-- [🔐 安全承诺](#-安全承诺)
+- [🔐 安全台账](#-安全台账safety-ledger)
 - [⚠️ 已知限制](#️-已知限制)
 - [🆕 最近版本](#-最近版本)
 
@@ -233,12 +242,24 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 
 部分高级操作依赖较新的 DSH 能力；不支持时界面会明确提示，而不是静默失败。
 
-## 🔐 安全承诺
+## 🔐 安全台账（Safety Ledger）
+
+每一次迁移都走同一条带安全边界的管线：**字节级备份先行 → 逐步回滚 → 迁移后校验 → 恢复账本兜底**。任何一步失败都会回到移动前的状态；连回滚都失败的极端情况会写入持久化恢复记录并在救援面板标红，等待人工确认——数据永不消失。
+
+**Never-does（绝不）：**
+
+- 绝不执行任何 git 写操作（commit / stash / reset / checkout 都不碰）；
+- 绝不在字节级备份落盘之前改动任何文件；
+- 绝不静默丢弃会话数据——恢复不了的极端情况会明确标红并保留现场；
+- 绝不绕过确认执行破坏性操作（对话内的迁移 / 修复还须经宿主审批弹窗）；
+- 绝不上传任何本地数据——插件无网络请求，全部工作在本机完成。
+
+**具体承诺：**
 
 - **移动前自动备份**；搬运落地后再核对会话身份与路径，不符则整体回退；
 - **失败时恢复到移动前状态**（文件与记账一并恢复）；
 - **删除先进回收站**，可还原到原位置或任意分组；彻底删除需二次确认；
-- **无法自动恢复时**，会在救援面板明确标出，需要人工确认；会话文件与备份始终保留，**绝不静默丢弃**；
+- **无法自动恢复时**，会在救援面板明确标出，需要人工确认；会话文件与备份始终保留；
 - **近期打开过、仍驻留在 Harness 内存中的会话**不能直接删除，需重启 Harness 后再删（界面会给出明确提示）。
 
 > 失败路径优先保数据，不静默丢会话。<br>
@@ -253,6 +274,13 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 - 宿主大版本升级若改变内部结构，相关能力可能降级或需重启后生效；搬家向导在无法安全写入时会在改动任何文件之前中止并提示。
 
 ## 🆕 最近版本
+
+### v2.2.0 · 2026-10-05
+
+- `mover.doctor` 自检：面板新增「自检」按钮 + `mover_doctor` 模型工具——服务、数据目录、恢复记录、工作区路径约 13 项检查，pass/warn/fail 三态汇报，DSH 升级后先自检再动手
+- 信任资产：`dsh://` 一键安装深链按钮、dsh.so 风险徽章（已收录且 L5 实测 / risk low）、dsh-plugin-registry 收录徽章、"DSH tested 0.2.0-rc.2" 徽章
+- 兼容性报告：`docs/compatibility/` 落地桌面版实测记录，此后每适配一个 DSH 版本新增带日期报告
+- 安全承诺章节品牌化为「安全台账（Safety Ledger）」+ never-does 清单
 
 ### v2.1.0 · 2026-10-04
 

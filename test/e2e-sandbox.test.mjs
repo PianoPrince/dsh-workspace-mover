@@ -1825,7 +1825,7 @@ const FAKE_EXEC = () => ({ agent: { session: {} }, signal: undefined });
 test('v2.1 apply 在带 dsh-tools 的宿主上注册三个 agent 工具，status 汇报能力位', async () => {
   const { registered } = mountToolStubs();
   apply(ctx);
-  assert.deepEqual(registered.map((t) => t.name), ['mover_list_sessions', 'mover_move_session', 'mover_repair_sessions']);
+  assert.deepEqual(registered.map((t) => t.name), ['mover_list_sessions', 'mover_move_session', 'mover_repair_sessions', 'mover_doctor']);
   for (const def of registered) {
     assert.equal(typeof def.execute, 'function', `${def.name}.execute`);
     assert.equal(typeof def.output?.render, 'function', `${def.name}.output.render`);
@@ -1918,4 +1918,45 @@ test('v2.1 mover_repair_sessions 走审批并修复未记账夹具会话', async
   assert.ok(entityA.record.sessionIds.includes('session-aaa'), 'repair 后已补账');
   assert.equal(approvalCalls.length, 1);
   assert.equal(approvalCalls[0].toolName, 'mover_repair_sessions');
+});
+
+// ===== v2.2.0 mover.doctor 自检 =====
+
+test('v2.2 mover.doctor 沙箱全绿：服务/数据/工作区全部 pass', async () => {
+  apply(ctx);
+  const res = await call('mover.doctor');
+  assert.equal(res.ok, true, JSON.stringify(res));
+  const { checks, summary } = res.value;
+  assert.ok(checks.length >= 12, `至少 12 项检查，实际 ${checks.length}`);
+  for (const c of checks) assert.ok(['pass', 'warn', 'fail'].includes(c.state), `state 合法: ${c.id}`);
+  assert.equal(summary.fail, 0, `不应有 fail: ${JSON.stringify(checks.filter((c) => c.state === 'fail'))}`);
+  const ids = new Set(checks.map((c) => c.id));
+  for (const expected of ['host-registry', 'host-persistence', 'host-projection', 'data-recycle', 'data-backups', 'recovery', 'workspaces']) {
+    assert.ok(ids.has(expected), `缺少检查项 ${expected}`);
+  }
+  assert.equal(typeof res.value.generatedAt, 'string');
+});
+
+test('v2.2 mover.doctor 降级：摘除注册表后 fail + warn，但不抛错', async () => {
+  apply(ctx);
+  ctx.workspaceRegistry = undefined;
+  const res = await call('mover.doctor');
+  assert.equal(res.ok, true, 'doctor 本身永远 ok');
+  const registryCheck = res.value.checks.find((c) => c.id === 'host-registry');
+  assert.equal(registryCheck.state, 'fail');
+  const workspacesCheck = res.value.checks.find((c) => c.id === 'workspaces');
+  assert.equal(workspacesCheck.state, 'warn');
+  assert.equal(res.value.summary.fail >= 1, true);
+});
+
+test('v2.2 mover.doctor 恢复记录告警：recovery.json 存在时 warn', async () => {
+  apply(ctx);
+  const dir = join(root, 'workspace-mover');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'recovery.json'), JSON.stringify({ version: 1, records: [{ id: 'rec-x', kind: 'delete', phase: 'test', createdAt: new Date().toISOString() }] }));
+  const res = await call('mover.doctor');
+  assert.equal(res.ok, true);
+  const recovery = res.value.checks.find((c) => c.id === 'recovery');
+  assert.equal(recovery.state, 'warn');
+  assert.match(recovery.detail, /1 record/);
 });

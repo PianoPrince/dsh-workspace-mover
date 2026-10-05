@@ -7,9 +7,16 @@
 <div align="center">
   <b style="font-size: 1.15em;">Drag a session onto another workspace in the sidebar—a true move of the original archive, not a copy</b><br /><br />
   <p style="font-size: 0; line-height: 1;">
+    <a href="dsh://plugin/install?id=dsh-workspace-mover&name=dsh-workspace-mover&version=2.1.0&repo=PianoPrince%2Fdsh-workspace-mover&permissions=Local%20session%20file%20access%2CWorkspace%20accounting%20changes&downloadUrl=https%3A%2F%2Fgithub.com%2FPianoPrince%2Fdsh-workspace-mover%2Farchive%2Frefs%2Fheads%2Fmain.zip">
+      <img src="https://img.shields.io/badge/DeepSeek%20Harness-%F0%9F%9A%80%20One--click%20install%20via%20desktop%20client-10B981?style=for-the-badge&logo=deepseek&logoColor=white" alt="One-click install via desktop client" />
+    </a>
+  </p>
+  <p style="font-size:12px;color:var(--dsh-alias-label-tertiary,#999)">The official desktop client currently degrades this deep link to window focus; Hub-based third-party clients run the full install flow.</p>
+  <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.1.0-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.2.0-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="DSH tested 0.2.0-rc.2" src="https://img.shields.io/badge/DSH_tested-0.2.0--rc.2-4c8dff" style="height:20px; margin:0 2px;" />
     <img alt="DSH engines" src="https://img.shields.io/badge/DSH-%E2%89%A50.1.5--rc.1-339933" style="height:20px; margin:0 2px;" />
     <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
     <img alt="npm dependencies: 0" src="https://img.shields.io/badge/npm%20dependencies-0-4d6bfe" style="height:20px; margin:0 2px;" />
@@ -18,6 +25,8 @@
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/PianoPrince/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
     <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://awesome-dsh-plugin.com"><img alt="Awesome DSH Plugin" src="https://awesome-dsh-plugin.com/badge.svg" style="height:20px; margin:0 2px;" /></a>
+    <a href="https://www.dsh.so/artifact/dsh-workspace-mover/"><img alt="dsh.so risk: low" src="https://www.dsh.so/badge/dsh-workspace-mover.svg" style="height:20px; margin:0 2px;" /></a>
+    <a href="https://github.com/XingLingQAQ/dsh-plugin-registry"><img alt="Listed in dsh-plugin-registry" src="https://img.shields.io/badge/registry-dsh--plugin--registry-2d6a8f" style="height:20px; margin:0 2px;" /></a>
     <img alt="True move" src="https://img.shields.io/badge/-True%20move-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="Zero token cost" src="https://img.shields.io/badge/-Zero%20token%20cost-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="Backup and rollback" src="https://img.shields.io/badge/-Backup%20%26%20rollback-4d6bfe" style="height:20px; margin:0 2px;" />
@@ -41,7 +50,7 @@
 - [🔌 How it integrates with DSH](#-how-it-integrates-with-dsh)
 - [🤝 Coexistence with other plugins](#-coexistence-with-other-plugins)
 - [🧩 Compatibility and uninstall](#-compatibility-and-uninstall)
-- [🔐 Security guarantees](#-security-guarantees)
+- [🔐 Safety Ledger](#-safety-ledger-安全台账)
 - [⚠️ Known limitations](#️-known-limitations)
 - [🆕 Recent version](#-recent-version)
 
@@ -235,12 +244,24 @@ Built to coexist: private communication/style namespaces, no rewrites of officia
 
 Some advanced actions need newer DSH capabilities; when unavailable the UI says so instead of failing silently.
 
-## 🔐 Security guarantees
+## 🔐 Safety Ledger (安全台账)
+
+Every migration runs through the same safety-bounded pipeline: **byte-level backup first → stepwise rollback → post-move verification → recovery ledger as the last resort**. Any failure returns to the pre-move state; the extreme case where even the rollback fails writes a durable recovery record and raises a red row in the rescue panel for manual review — data never disappears.
+
+**Never-does:**
+
+- Never performs any git write operations (no commit / stash / reset / checkout);
+- Never touches a file before the byte-level backup is on disk;
+- Never silently discards session data — unrecoverable extremes are flagged in red with the scene preserved;
+- Never runs a destructive action without confirmation (conversational move / repair additionally requires the host approval prompt);
+- Never uploads any local data — the plugin makes no network requests, everything runs locally.
+
+**Concrete guarantees:**
 
 - **Automatic backup before every move**; after landing, the session identity and path are re-checked — mismatch rolls the whole move back;
 - **On failure, restore to the pre-move state** (files and bookkeeping together);
 - **Deletes go to the recycle bin first** and can be restored to the original spot or any group; permanent delete needs a second confirmation;
-- **If automatic recovery is not possible**, the rescue panel flags it for manual review; session files and backups are kept — **never silently discarded**;
+- **If automatic recovery is not possible**, the rescue panel flags it for manual review; session files and backups are kept;
 - **Recently opened sessions still resident in Harness memory** cannot be deleted until you restart Harness (the UI says so clearly).
 
 > Failure paths prefer keeping your data — sessions are never silently dropped.<br>
@@ -255,6 +276,13 @@ Some advanced actions need newer DSH capabilities; when unavailable the UI says 
 - Major host upgrades that change internal structures may degrade some actions or require a restart; the move-home wizard aborts before touching files if it cannot write safely.
 
 ## 🆕 Recent version
+
+### v2.2.0 · 2026-10-05
+
+- `mover.doctor` self-check: a "Doctor" button in the rescue panel plus a `mover_doctor` agent tool — ~13 checks over host services, data directories, recovery records and workspace paths, reported as pass/warn/fail; run it after a DSH upgrade before attempting anything else
+- Trust assets: `dsh://` one-click install deep-link button, dsh.so risk badge (listed, L5 run-tested / risk low), dsh-plugin-registry badge, "DSH tested 0.2.0-rc.2" badge
+- Compatibility report: `docs/compatibility/` records the desktop verification; every future DSH adaptation adds a dated copy
+- Security section rebranded as **Safety Ledger** with an explicit never-does list
 
 ### v2.1.0 · 2026-10-04
 

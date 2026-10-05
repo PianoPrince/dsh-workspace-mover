@@ -131,6 +131,22 @@ window.__ModuleLoader__.load({
 				sessionBusy: "该会话正在处理中（可能有迁移 / 还原 / 删除操作尚未完成），请稍后再试。",
 				contextStale: "插件上下文已失效（客户端热重载导致）。请刷新页面（或重启应用）后重试，功能会自动恢复。",
 				recoveryNote: "检测到 {n} 条自动回滚也失败的记录，需人工确认：会话文件与备份均保留在原处，未丢失。请勿手动清理 pluginData 目录，查看 recovery.json 或联系开发者处理。",
+				doctorBtn: "自检",
+				doctorChecking: "自检中…",
+				doctorSummary: "自检完成：{pass} 通过 · {warn} 警告 · {fail} 失败",
+				doctorHostRegistry: "工作区注册表服务",
+				doctorHostPersistence: "会话持久化服务",
+				doctorHostProjection: "投影缓存",
+				doctorHostArchive: "归档通道",
+				doctorHostAgents: "Agents 服务",
+				doctorHostApproval: "审批接缝",
+				doctorAgentTools: "Agent 工具",
+				doctorDataRecycle: "回收站",
+				doctorDataBackups: "备份目录",
+				doctorDataHistory: "移动历史",
+				doctorDataTasks: "任务记录",
+				doctorRecovery: "恢复记录",
+				doctorWorkspaces: "工作区路径",
 				repairAllBtn: "一键修复",
 				repairAllDone: "✓ 已修复 {n} · 跳过 {s} · 失败 {f}",
 				skipNeedsTarget: "需选择目标分组",
@@ -262,6 +278,22 @@ window.__ModuleLoader__.load({
 				sessionBusy: "This session is busy: a move / restore / delete is still in flight. Try again in a moment.",
 				contextStale: "The plugin context went stale (client-side hot reload). Refresh the page (or restart the app) and the features will work again.",
 				recoveryNote: "{n} record(s) need manual recovery: automatic rollback also failed. Session files and backups are all kept in place — nothing was lost. Do not clean the pluginData directory by hand; inspect recovery.json or contact the developer.",
+				doctorBtn: "Doctor",
+				doctorChecking: "Running checks…",
+				doctorSummary: "Doctor finished: {pass} pass · {warn} warn · {fail} fail",
+				doctorHostRegistry: "Workspace registry service",
+				doctorHostPersistence: "Session persistence service",
+				doctorHostProjection: "Projection cache",
+				doctorHostArchive: "Archive channel",
+				doctorHostAgents: "Agents service",
+				doctorHostApproval: "Approval seam",
+				doctorAgentTools: "Agent tools",
+				doctorDataRecycle: "Recycle bin",
+				doctorDataBackups: "Backups",
+				doctorDataHistory: "Move history",
+				doctorDataTasks: "Task records",
+				doctorRecovery: "Recovery records",
+				doctorWorkspaces: "Workspace paths",
 				repairAllBtn: "Fix all",
 				repairAllDone: "✓ Fixed {n} · skipped {s} · failed {f}",
 				skipNeedsTarget: "needs a target group",
@@ -335,6 +367,7 @@ window.__ModuleLoader__.load({
 .wsm-mono{font-family:ui-monospace,Consolas,Menlo,monospace}
 .wsm-badge{flex:none;font-size:11px;padding:1px 7px;border-radius:99px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.15));color:var(--dsw-alias-label-secondary,#666)}
 .wsm-badge.err{color:var(--dsw-alias-state-error-primary,#dc2626);border-color:currentColor}
+.wsm-badge.warn{color:var(--dsw-alias-state-warning-primary,#d97706);border-color:currentColor}
 .wsm-cwd{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary,#999)}
 .wsm-select{font:inherit;font-size:12px;background:var(--dsw-specific-input-major,#fff);color:var(--dsw-alias-label-primary,#111);border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.15));border-radius:6px;padding:3px 6px;max-width:220px}
 .wsm-input{flex:1.4;min-width:170px;font:inherit;font-size:12px;background:var(--dsw-specific-input-major,#fff);color:var(--dsw-alias-label-primary,#111);border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.15));border-radius:6px;padding:3px 7px}
@@ -637,6 +670,7 @@ window.__ModuleLoader__.load({
 			const [trash, setTrash] = useState(null);
 			const [backups, setBackups] = useState(null);
 			const [tasks, setTasks] = useState(null);
+			const [doctor, setDoctor] = useState(null);
 			const [query, setQuery] = useState("");
 
 			const call = async (endpoint, payload) => {
@@ -674,6 +708,21 @@ window.__ModuleLoader__.load({
 			};
 
 			useEffect(() => { void runScan(); }, []);
+
+			// 自检（v2.2）：只读诊断，结果常驻面板直到下次运行或重新扫描
+			const runDoctorNow = async () => {
+				setBusy(true);
+				setNote(t("doctorChecking"));
+				try {
+					const value = await call("mover.doctor");
+					setDoctor(value);
+					setNote(t("doctorSummary", value.summary));
+				} catch (err) {
+					setNote(t("failed", { msg: errMsg(err) }));
+				} finally {
+					setBusy(false);
+				}
+			};
 
 			const relink = async (item) => {
 				const target = picked[item.sessionId];
@@ -1185,6 +1234,7 @@ window.__ModuleLoader__.load({
 				h("div", { className: "wsm-scanrow" },
 					h("button", { className: "wsm-btn small primary", disabled: busy, onClick: () => void runScan() }, busy ? t("scanning") : t("scan")),
 					h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void repairAll() }, t("repairAllBtn")),
+					h("button", { className: "wsm-btn small", disabled: busy, onClick: () => { setDoctor(null); void runDoctorNow(); } }, busy ? t("doctorChecking") : t("doctorBtn")),
 					h("input",
 						{
 							className: "wsm-input", placeholder: t("filterPh"), value: query, disabled: busy,
@@ -1195,6 +1245,13 @@ window.__ModuleLoader__.load({
 						t("scannedN", { n: scan.scanned }) + (summaryParts.length ? ` · ${summaryParts.join(" · ")}` : ""))
 						: null
 				),
+				doctor ? h("div", { className: "wsm-list", style: { marginTop: "8px" } },
+					doctor.checks.map((c) => h("div", { className: "wsm-item", key: c.id },
+						h("span", { className: "wsm-badge" + (c.state === "fail" ? " err" : c.state === "warn" ? " warn" : "") },
+							c.state === "pass" ? "✓" : c.state === "warn" ? "⚠" : "✗"),
+						h("span", { className: "wsm-cwd", title: c.detail }, t(`doctor${c.id.split("-").map((w) => w[0].toUpperCase() + w.slice(1)).join("")}`) + (c.detail ? ` — ${c.detail}` : ""))
+					))
+				) : null,
 				brokenWorkspaces.length > 0 ? h(Caption, { text: t("wsSection"), help: t("wsHelp") }) : null,
 				brokenWorkspaces.length > 0 ? h("div", { className: "wsm-list" },
 					brokenWorkspaces.map((row) => h("div", { className: "wsm-item", key: row.workspaceId },
