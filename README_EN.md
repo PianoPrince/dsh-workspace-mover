@@ -6,26 +6,19 @@
 <!-- Hero -->
 <div align="center">
   <b style="font-size: 1.15em;">Drag a session onto another workspace in the sidebar—a true move of the original archive, not a copy</b><br /><br />
-<p style="font-size: 0; line-height: 1;">
-    <code style="font-size:14px">dsh plugin --profile web add dsh-workspace-mover</code>
-  </p>
 
-<p style="font-size:12px;color:var(--dsw-alias-label-tertiary,#999)">Desktop app: search "dsh-workspace-mover" on the in-app Plugins page · <a href="#-install">more channels</a> · GitHub strips <code>dsh://</code> deep links — for one-click install enter through the <a href="https://www.dsh.so/artifact/dsh-workspace-mover/">dsh.so channel</a></p>
   <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
     <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.1.1-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="DSH tested 0.2.0-rc.2" src="https://img.shields.io/badge/DSH_tested-0.2.0--rc.2-4c8dff" style="height:20px; margin:0 2px;" />
-    <img alt="DSH engines" src="https://img.shields.io/badge/DSH-%E2%89%A50.1.5--rc.1-339933" style="height:20px; margin:0 2px;" />
     <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
-    <img alt="npm dependencies: 0" src="https://img.shields.io/badge/npm%20dependencies-0-4d6bfe" style="height:20px; margin:0 2px;" />
   </p>
   <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/PianoPrince/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
     <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://awesome-dsh-plugin.com"><img alt="Awesome DSH Plugin" src="https://awesome-dsh-plugin.com/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.dsh.so/artifact/dsh-workspace-mover/"><img alt="dsh.so risk: low" src="https://www.dsh.so/badge/dsh-workspace-mover.svg" style="height:20px; margin:0 2px;" /></a>
-    <a href="https://github.com/XingLingQAQ/dsh-plugin-registry"><img alt="Listed in dsh-plugin-registry" src="https://img.shields.io/badge/registry-dsh--plugin--registry-2d6a8f" style="height:20px; margin:0 2px;" /></a>
     <img alt="True move" src="https://img.shields.io/badge/-True%20move-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="Zero token cost" src="https://img.shields.io/badge/-Zero%20token%20cost-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="Backup and rollback" src="https://img.shields.io/badge/-Backup%20%26%20rollback-4d6bfe" style="height:20px; margin:0 2px;" />

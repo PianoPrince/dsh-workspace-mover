@@ -7,24 +7,17 @@
 <div align="center">
   <b style="font-size: 1.15em;">在侧边栏把会话拖到另一个工作区——真迁移原始档案，而不是复制</b><br /><br />
   <p style="font-size: 0; line-height: 1;">
-    <code style="font-size:14px">dsh plugin --profile web add dsh-workspace-mover</code>
-  </p>
-  <p style="font-size:12px;color:var(--dsw-alias-label-tertiary,#999)">桌面版在应用内「插件」页搜索安装 · <a href="#-安装">更多渠道</a> · GitHub 会剥离 <code>dsh://</code> 深链，一键安装请从 <a href="https://www.dsh.so/artifact/dsh-workspace-mover/">dsh.so 频道</a>进入</p>
-  <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
     <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.1.1-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="DSH tested 0.2.0-rc.2" src="https://img.shields.io/badge/DSH_tested-0.2.0--rc.2-4c8dff" style="height:20px; margin:0 2px;" />
-    <img alt="DSH engines" src="https://img.shields.io/badge/DSH-%E2%89%A50.1.5--rc.1-339933" style="height:20px; margin:0 2px;" />
     <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
-    <img alt="npm 依赖：0" src="https://img.shields.io/badge/npm%20%E4%BE%9D%E8%B5%96-0-4d6bfe" style="height:20px; margin:0 2px;" />
   </p>
   <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/PianoPrince/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
     <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://awesome-dsh-plugin.com"><img alt="Awesome DSH Plugin" src="https://awesome-dsh-plugin.com/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.dsh.so/artifact/dsh-workspace-mover/"><img alt="dsh.so risk: low" src="https://www.dsh.so/badge/dsh-workspace-mover.svg" style="height:20px; margin:0 2px;" /></a>
-    <a href="https://github.com/XingLingQAQ/dsh-plugin-registry"><img alt="Listed in dsh-plugin-registry" src="https://img.shields.io/badge/registry-dsh--plugin--registry-2d6a8f" style="height:20px; margin:0 2px;" /></a>
     <img alt="真迁移" src="https://img.shields.io/badge/-真迁移-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="零 token 消耗" src="https://img.shields.io/badge/-零%20token%20消耗-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="备份回滚" src="https://img.shields.io/badge/-备份回滚-4d6bfe" style="height:20px; margin:0 2px;" />
