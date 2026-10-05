@@ -66,4 +66,6 @@ Semver guidance:
 | New user-facing capability | MINOR |
 | Fixes, docs, badges, tooling | PATCH |
 
+Version pacing: prefer PATCH for small increments (a single diagnostics endpoint/button, doc assets, badge work). Reserve MINOR for releases that bundle several user-facing capabilities or change the feature surface meaningfully — do not bump minor for every small addition.
+
 Verified host range (see README compatibility table) should be updated in the same PR as any host adaptation.

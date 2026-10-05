@@ -7,7 +7,7 @@
 <div align="center">
   <b style="font-size: 1.15em;">Drag a session onto another workspace in the sidebar—a true move of the original archive, not a copy</b><br /><br />
   <p style="font-size: 0; line-height: 1;">
-    <a href="dsh://plugin/install?id=dsh-workspace-mover&name=dsh-workspace-mover&version=2.1.0&repo=PianoPrince%2Fdsh-workspace-mover&permissions=Local%20session%20file%20access%2CWorkspace%20accounting%20changes&downloadUrl=https%3A%2F%2Fgithub.com%2FPianoPrince%2Fdsh-workspace-mover%2Farchive%2Frefs%2Fheads%2Fmain.zip">
+    <a href="dsh://plugin/install?id=dsh-workspace-mover&name=dsh-workspace-mover&version=2.1.1&repo=PianoPrince%2Fdsh-workspace-mover&permissions=Local%20session%20file%20access%2CWorkspace%20accounting%20changes&downloadUrl=https%3A%2F%2Fgithub.com%2FPianoPrince%2Fdsh-workspace-mover%2Farchive%2Frefs%2Fheads%2Fmain.zip">
       <img src="https://img.shields.io/badge/DeepSeek%20Harness-%F0%9F%9A%80%20One--click%20install%20via%20desktop%20client-10B981?style=for-the-badge&logo=deepseek&logoColor=white" alt="One-click install via desktop client" />
     </a>
   </p>
@@ -15,7 +15,7 @@
   <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.2.0-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.1.1-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="DSH tested 0.2.0-rc.2" src="https://img.shields.io/badge/DSH_tested-0.2.0--rc.2-4c8dff" style="height:20px; margin:0 2px;" />
     <img alt="DSH engines" src="https://img.shields.io/badge/DSH-%E2%89%A50.1.5--rc.1-339933" style="height:20px; margin:0 2px;" />
     <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
@@ -277,7 +277,7 @@ Every migration runs through the same safety-bounded pipeline: **byte-level back
 
 ## 🆕 Recent version
 
-### v2.2.0 · 2026-10-05
+### v2.1.1 · 2026-10-05
 
 - `mover.doctor` self-check: a "Doctor" button in the rescue panel plus a `mover_doctor` agent tool — ~13 checks over host services, data directories, recovery records and workspace paths, reported as pass/warn/fail; run it after a DSH upgrade before attempting anything else
 - Trust assets: `dsh://` one-click install deep-link button, dsh.so risk badge (listed, L5 run-tested / risk low), dsh-plugin-registry badge, "DSH tested 0.2.0-rc.2" badge

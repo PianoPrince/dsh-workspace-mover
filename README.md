@@ -7,7 +7,7 @@
 <div align="center">
   <b style="font-size: 1.15em;">在侧边栏把会话拖到另一个工作区——真迁移原始档案，而不是复制</b><br /><br />
   <p style="font-size: 0; line-height: 1;">
-    <a href="dsh://plugin/install?id=dsh-workspace-mover&name=dsh-workspace-mover&version=2.1.0&repo=PianoPrince%2Fdsh-workspace-mover&permissions=%E6%9C%AC%E5%9C%B0%E4%BC%9A%E8%AF%9D%E6%96%87%E4%BB%B6%E8%AF%BB%E5%86%99%2C%E5%B7%A5%E4%BD%9C%E5%8C%BA%E8%AE%B0%E8%B4%A6%E5%8F%98%E6%9B%B4&downloadUrl=https%3A%2F%2Fgithub.com%2FPianoPrince%2Fdsh-workspace-mover%2Farchive%2Frefs%2Fheads%2Fmain.zip">
+    <a href="dsh://plugin/install?id=dsh-workspace-mover&name=dsh-workspace-mover&version=2.1.1&repo=PianoPrince%2Fdsh-workspace-mover&permissions=%E6%9C%AC%E5%9C%B0%E4%BC%9A%E8%AF%9D%E6%96%87%E4%BB%B6%E8%AF%BB%E5%86%99%2C%E5%B7%A5%E4%BD%9C%E5%8C%BA%E8%AE%B0%E8%B4%A6%E5%8F%98%E6%9B%B4&downloadUrl=https%3A%2F%2Fgithub.com%2FPianoPrince%2Fdsh-workspace-mover%2Farchive%2Frefs%2Fheads%2Fmain.zip">
       <img src="https://img.shields.io/badge/DeepSeek%20Harness-%F0%9F%9A%80%20%E5%94%A4%E8%B5%B7%E6%A1%8C%E9%9D%A2%E5%AE%A2%E6%88%B7%E7%AB%AF%E4%B8%80%E9%94%AE%E5%AE%89%E8%A3%85-10B981?style=for-the-badge&logo=deepseek&logoColor=white" alt="唤起桌面客户端一键安装" />
     </a>
   </p>
@@ -15,7 +15,7 @@
   <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.2.0-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.1.1-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="DSH tested 0.2.0-rc.2" src="https://img.shields.io/badge/DSH_tested-0.2.0--rc.2-4c8dff" style="height:20px; margin:0 2px;" />
     <img alt="DSH engines" src="https://img.shields.io/badge/DSH-%E2%89%A50.1.5--rc.1-339933" style="height:20px; margin:0 2px;" />
     <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
@@ -275,7 +275,7 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 
 ## 🆕 最近版本
 
-### v2.2.0 · 2026-10-05
+### v2.1.1 · 2026-10-05
 
 - `mover.doctor` 自检：面板新增「自检」按钮 + `mover_doctor` 模型工具——服务、数据目录、恢复记录、工作区路径约 13 项检查，pass/warn/fail 三态汇报，DSH 升级后先自检再动手
 - 信任资产：`dsh://` 一键安装深链按钮、dsh.so 风险徽章（已收录且 L5 实测 / risk low）、dsh-plugin-registry 收录徽章、"DSH tested 0.2.0-rc.2" 徽章
