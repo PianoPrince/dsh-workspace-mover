@@ -55,6 +55,11 @@ function makeEntity(id, path, hostRef) {
     detached: [],
     failAttach: false,
     async status() { return existsSync(record.path) ? 'ok' : 'missing-dir'; },
+    // 官方文档化的改名接口：只换标题，不碰 path / 成员名单。
+    async setTitle(next) {
+      record.title = String(next);
+      record.updatedAt = new Date().toISOString();
+    },
     async mutate(fn) {
       // 官方语义：整体换新快照（本插件借此同步改写 path/title），随后按索引剪枝成员
       const changed = fn(record);
@@ -198,6 +203,34 @@ test('mover.status 就绪', async () => {
   const res = await call('mover.status');
   assert.equal(res.ok, true);
   assert.equal(res.value.ready, true);
+});
+
+test('v2.2 mover.status 能力位：官方接口缺失时如实标记为降级（可观测，不静默）', async () => {
+  apply(ctx);
+  // 夹具的实体带官方 setTitle（与真实 Workspace 接口一致），但不带 unarchiveSession。
+  const res = await call('mover.status');
+  assert.equal(res.ok, true);
+  assert.equal(res.value.capabilities.setTitleApi, true, '实体带 setTitle 应被识别');
+  assert.equal(res.value.capabilities.unarchiveApi, false, '夹具无官方取消归档接口');
+  assert.ok(res.value.degradedFeatures.includes('unarchive-official-api'),
+    `缺失官方取消归档接口应列入降级: ${JSON.stringify(res.value.degradedFeatures)}`);
+  assert.ok(!res.value.degradedFeatures.includes('set-title-official-api'), '有 setTitle 不应报降级');
+});
+
+test('v2.2 mover.status 能力位：补上官方接口后不再报降级', async () => {
+  apply(ctx);
+  ctx.workspaceRegistry.unarchiveSession = async () => {};
+  const res = await call('mover.status');
+  assert.equal(res.value.capabilities.unarchiveApi, true);
+  assert.ok(!res.value.degradedFeatures.includes('unarchive-official-api'));
+});
+
+test('v2.2 mover.status 能力位：setTitle 缺失时也如实标记', async () => {
+  apply(ctx);
+  delete entityA.setTitle;
+  const res = await call('mover.status');
+  assert.equal(res.value.capabilities.setTitleApi, false);
+  assert.ok(res.value.degradedFeatures.includes('set-title-official-api'));
 });
 
 test('正常迁移：文件物理搬移 + 头部改写 + 双向记账 + 有备份', async () => {
@@ -841,6 +874,22 @@ test('标题同步：默认名（=旧文件夹名）跟随改名，自定义标�
   assert.equal(entityA.record.title, '我的项目', '自定义标题保留');
 });
 
+test('v2.2 标题同步失败不得影响已完成的 path 重定向（setTitle 与 mutate 解耦）', async () => {
+  apply(ctx);
+  setupMovedFolder2();
+  const ent = ctx.workspaceRegistry.entities.get('wid-t2');
+  const oldPath = ent.path;
+  const moved = oldPath + '-moved';
+  ent.record.title = oldPath.split(/[\\/]/).pop(); // 仍是旧文件夹名 → 会尝试同步
+  ent.setTitle = async () => { throw new Error('simulated setTitle failure'); };
+
+  const res = await call('mover.repoint', { workspaceId: 'wid-t2', newPath: moved });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.pathUpdated, true, 'path 重定向必须完成');
+  assert.equal(realpathSync(ent.path), realpathSync(moved), '工作区已指向新路径');
+  assert.notEqual(ent.record.title, moved.split(/[\\/]/).pop(), '标题同步失败 → 保留原标题');
+});
+
 /** 独立夹具：避免用例间复用同一目录名导致的前置污染。 */
 function setupMovedFolder2() {
   const dir = join(root, 'ws-t2');
@@ -1005,11 +1054,49 @@ test('mover.unarchive 拒绝：未归档的会话；registry 缺状态写通道'
   assert.equal(miss.ok, false);
   assert.match(miss.error.message, /not archived/);
 
-  // 归档集里有它，但 registry 没有官方写通道（老版本宿主容错）
+  // 归档集里有它，但 registry 既无官方接口也无状态写通道（老版本宿主容错）
   ctx.workspaceRegistry.archivedSessionIds = ['session-aaa'];
   const res = await call('mover.unarchive', { sessionId: 'session-aaa' });
   assert.equal(res.ok, false);
   assert.match(res.error.message, /no state mutation API/);
+});
+
+test('v2.2 mover.unarchive 优先走官方 registry.unarchiveSession', async () => {
+  apply(ctx);
+  stubRegistryState();
+  entityA.record.sessionIds.push('session-aaa');
+  ctx.workspaceRegistry.archivedSessionIds = ['session-aaa'];
+  let officialCalls = 0;
+  let fallbackCalls = 0;
+  const enqueue = ctx.workspaceRegistry.enqueueOperation;
+  ctx.workspaceRegistry.unarchiveSession = async (id) => {
+    officialCalls++;
+    ctx.workspaceRegistry.archivedSessionIds = ctx.workspaceRegistry.archivedSessionIds.filter((x) => String(x) !== String(id));
+  };
+  ctx.workspaceRegistry.enqueueOperation = (...args) => { fallbackCalls++; return enqueue(...args); };
+
+  const res = await call('mover.unarchive', { sessionId: 'session-aaa' });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(officialCalls, 1, '必须调用官方接口');
+  assert.equal(fallbackCalls, 0, '有官方接口时不得走回退通道');
+  assert.equal(ctx.workspaceRegistry.archivedSessionIds.includes('session-aaa'), false);
+  assert.deepEqual(entityA.record.sessionIds, ['session-aaa'], '记账槽不得被取消归档改动');
+});
+
+test('v2.2 mover.unarchive 官方接口缺失时回退到状态写通道', async () => {
+  apply(ctx);
+  stubRegistryState();
+  entityA.record.sessionIds.push('session-aaa');
+  ctx.workspaceRegistry.archivedSessionIds = ['session-aaa'];
+  let fallbackCalls = 0;
+  const enqueue = ctx.workspaceRegistry.enqueueOperation;
+  ctx.workspaceRegistry.enqueueOperation = (...args) => { fallbackCalls++; return enqueue(...args); };
+  assert.equal(typeof ctx.workspaceRegistry.unarchiveSession, 'undefined', '夹具默认无官方接口');
+
+  const res = await call('mover.unarchive', { sessionId: 'session-aaa' });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(fallbackCalls, 1, '必须走回退通道');
+  assert.equal(ctx.workspaceRegistry.archivedSessionIds.includes('session-aaa'), false);
 });
 
 test('mover.openFolder 只允许已注册工作区路径；openInFileManager 按平台拼装命令', async () => {
@@ -1221,6 +1308,65 @@ test('mover.session.delete：移入回收站并完成四件套清理', async () 
   assert.equal(list.value.items[0].sessionId, 'session-aaa');
   assert.equal(list.value.items[0].title, 'Alpha discussion');
   assert.equal(list.value.items[0].ownerWorkspaceId, 'wid-a');
+});
+
+test('v2.2 备份 GC：删除会话默认保留备份，purgeBackups=true 才清理，且不误删相邻 id', async () => {
+  apply(ctx);
+  sharedIndex.sessionPaths.set('session-aaa', A);
+  sharedIndex.sessionPaths.set('session-aaa-1', A);
+  entityA.record.sessionIds.push('session-aaa', 'session-aaa-1');
+  // 三个会话各留一份备份；session-aaa-1 是 session-aaa 的前缀超集，必须不被误删
+  stashBackup('session-aaa', Buffer.from('aaa-1'));
+  stashBackup('session-aaa-1', Buffer.from('neighbour'));
+  const dir = join(root, 'workspace-mover', 'backups');
+  const filesFor = (id) => readdirSync(dir).filter((f) => f.startsWith(`${id}.`));
+
+  // ① 默认：删除会话但保留备份
+  const del = await call('mover.session.delete', { sessionId: 'session-aaa' });
+  assert.equal(del.ok, true, JSON.stringify(del));
+  assert.equal(del.value.backupsDeleted, 0, '默认不得删除备份');
+  assert.equal(filesFor('session-aaa').length, 1, '备份仍在（回收站还原后可能还要用）');
+  assert.equal(filesFor('session-aaa-1').length, 1);
+
+  // ② 现在 session-aaa 档案已不存在 → 它的备份组成为孤儿
+  const listed = await call('mover.backups.list');
+  assert.equal(listed.ok, true);
+  const aaaGroup = listed.value.items.find((it) => it.sessionId === 'session-aaa');
+  const neighbourGroup = listed.value.items.find((it) => it.sessionId === 'session-aaa-1');
+  assert.equal(aaaGroup.orphan, true, '会话已删除 → 备份组标记为孤儿');
+  assert.equal(neighbourGroup.orphan, false, '仍存在的会话不得被误标为孤儿');
+  assert.equal(listed.value.orphanGroups, 1);
+  assert.ok(listed.value.orphanBytes > 0);
+
+  // ③ 彻底删除 + purgeBackups：连带清掉该会话备份，且相邻前缀 id 毫发无损
+  const purged = await call('mover.trash.purge', { sessionId: 'session-aaa', purgeBackups: true });
+  assert.equal(purged.ok, true, JSON.stringify(purged));
+  assert.equal(purged.value.purged, 1);
+  assert.equal(purged.value.backupsDeleted, 1);
+  assert.equal(filesFor('session-aaa').length, 0, '孤儿备份必须被清掉');
+  assert.equal(filesFor('session-aaa-1').length, 1, '相邻前缀 id 的备份绝不能被误删');
+  assert.equal(readFileSync(join(dir, filesFor('session-aaa-1')[0])).toString(), 'neighbour');
+});
+
+test('v2.2 备份 GC：doctor 汇总孤儿备份组数与占用', async () => {
+  apply(ctx);
+  // 只留一份"会话已不存在"的备份
+  stashBackup('session-ghost', Buffer.alloc(64, 7));
+  const doc = await call('mover.doctor');
+  assert.equal(doc.ok, true);
+  const backupsCheck = doc.value.checks.find((c) => c.id === 'data-backups');
+  assert.equal(backupsCheck.state, 'pass');
+  assert.match(backupsCheck.detail, /orphan group/, `应汇报孤儿组: ${backupsCheck.detail}`);
+});
+
+test('v2.2 备份 GC：moveMany 历史聚合的会话备份仍被视为存活', async () => {
+  apply(ctx);
+  sharedIndex.sessionPaths.set('session-aaa', A);
+  entityA.record.sessionIds.push('session-aaa');
+  stashBackup('session-aaa', Buffer.from('alive'));
+  const listed = await call('mover.backups.list');
+  const group = listed.value.items.find((it) => it.sessionId === 'session-aaa');
+  assert.equal(group.orphan, false, '注册表仍记账的会话不算孤儿');
 });
 
 test('mover.session.delete：常驻内存的会话拒绝删除', async () => {
@@ -1760,6 +1906,43 @@ test('v1.4 scan 超限截断：先按 mtime 排序，保留最新 400 条', asyn
   assert.ok(ids.has('session-gen-409'), '最新的生成会话必须保留');
   assert.equal(ids.has('session-gen-000'), false, '最旧的生成会话必须被截掉');
   assert.ok(ids.has('session-aaa'), '整体最新的夹具会话保留');
+  assert.equal(res.value.scannedParsed, CAP, 'scannedParsed 报告实际解析条数');
+});
+
+test('v2.2 归档列表透传截断信息：大库上"不是全部"必须可说明', async () => {
+  apply(ctx);
+  const CAP = SCAN_MAX_ITEMS;
+  const EXTRA = 5;
+  const base = Date.now() - 1_000_000;
+  // 造一个很旧、且被归档的会话：它会被 mtime 截断挡在扫描窗口之外。
+  const oldId = 'session-archived-old';
+  const oldPath = artifactPath(root, A, oldId);
+  mkdirSync(dirname(oldPath), { recursive: true });
+  writeFileSync(oldPath, makeArtifact({ type: 'session', id: oldId, cwd: A, title: 'Ancient archived' }));
+  const oldTime = new Date(base - 500_000);
+  utimesSync(oldPath, oldTime, oldTime);
+
+  for (let i = 0; i < CAP + EXTRA; i++) {
+    const id = `session-arch-${String(i).padStart(3, '0')}`;
+    const p = artifactPath(root, A, id);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, makeArtifact({ type: 'session', id, cwd: A, title: `Arch ${i}` }));
+    const t = new Date(base + i * 1000);
+    utimesSync(p, t, t);
+  }
+  // 官方归档集：把最旧的那个也标为归档
+  ctx.workspaceRegistry.archivedSessionIds = [oldId];
+
+  const res = await call('mover.archived');
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.truncated, true, '本次扫描必然被截断');
+  assert.equal(res.value.archivedTotal, 1);
+  assert.ok(res.value.scannedTotal > res.value.scannedParsed,
+    `必须同时给出"共多少"与"解析了多少": ${JSON.stringify({ total: res.value.scannedTotal, parsed: res.value.scannedParsed })}`);
+  // 关键：被截断挡住的归档会话确实不在列表里——所以 UI 必须能说明这件事
+  assert.equal(res.value.items.some((it) => it.sessionId === oldId), false,
+    '该归档会话落在扫描窗口之外（正是需要提示用户的场景）');
+  assert.equal(res.value.items.length, 0);
 });
 
 test('v1.4 回滚也失败 → 写 recovery 记录，scan 报告 recoveryCount', async () => {
@@ -1960,3 +2143,49 @@ test('v2.2 mover.doctor 恢复记录告警：recovery.json 存在时 warn', asyn
   assert.equal(recovery.state, 'warn');
   assert.match(recovery.detail, /1 record/);
 });
+
+//#region v2.2 存储布局自证（插件复刻了 session-persistence-jsonl 的目录编码，
+// 且 persistence.root 并非文档化接口——宿主改布局时必须可检测而非静默失效）
+
+test('mover.status 报告 storageLayout=ok，且 doctor 有 data-layout 通过项', async () => {
+  apply(ctx);
+  const status = await call('mover.status');
+  assert.equal(status.ok, true);
+  assert.equal(status.value.capabilities.storageLayout, 'ok',
+    `沙箱夹具的布局必须自证通过: ${JSON.stringify(status.value.storageLayout)}`);
+  assert.ok(!status.value.degradedFeatures.includes('storage-layout'));
+
+  const doc = await call('mover.doctor');
+  const layoutCheck = doc.value.checks.find((c) => c.id === 'data-layout');
+  assert.ok(layoutCheck, 'doctor 必须包含 data-layout 检查项');
+  assert.equal(layoutCheck.state, 'pass');
+});
+
+test('宿主布局漂移时自证失败：storageLayout=degraded 且列为降级特性', async () => {
+  apply(ctx);
+  // 把持久化根指向别处：插件按自己的编码规则反推出的目录在那边不存在。
+  ctx.sessionPersistence.root = join(root, 'somewhere-else');
+  const status = await call('mover.status');
+  assert.equal(status.ok, true, 'status 本身永远 ok');
+  assert.equal(status.value.capabilities.storageLayout, 'degraded');
+  assert.ok(status.value.degradedFeatures.includes('storage-layout'),
+    `降级特性应包含 storage-layout: ${JSON.stringify(status.value.degradedFeatures)}`);
+  assert.equal(typeof status.value.storageLayout.reason, 'string');
+
+  const doc = await call('mover.doctor');
+  assert.equal(doc.ok, true, 'doctor 不因布局异常而抛错');
+  const layoutCheck = doc.value.checks.find((c) => c.id === 'data-layout');
+  assert.equal(layoutCheck.state, 'warn');
+});
+
+test('没有会话可校验时 storageLayout=empty（全新安装不误报降级）', async () => {
+  apply(ctx);
+  // 清空持久化根：list() 动态扫描，返回空即无样本可校验。
+  rmSync(root, { recursive: true, force: true });
+  const status = await call('mover.status');
+  assert.equal(status.ok, true);
+  assert.equal(status.value.capabilities.storageLayout, 'empty');
+  assert.ok(!status.value.degradedFeatures.includes('storage-layout'), '无样本不应报降级');
+});
+//#endregion
+
