@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.2.0] - 2026-10-09
+
+### Changed (behavior)
+
+- **Batch and multi-select moves no longer guess a session id.** When the authoritative row-to-id channel (the React fiber carrying `node.id`) is unavailable, the client used to fall back to positional order and, on a title mismatch, take the *next* id in sequence. Because the official sidebar hides blank and archived rows, that fallback could shift a group by one and move a *different but valid* set of sessions — undetectable host-side. The fallback now refuses to guess: unresolvable rows are reported to the user, and a move either aborts (nothing resolvable) or proceeds with only the rows that resolved, after an explicit confirmation that names the skipped count. This is the one intentional behavior change in this release.
+- **Workspace resolution verifies instead of trusting DOM order.** The positional fallback that mapped the *i*-th sidebar header to the *i*-th registry item is now accepted only when the header text actually matches that item's title or path; otherwise the move aborts with the existing "list out of sync" message. Previously a single hidden header (for example a workspace whose folder was moved) shifted every later index by one.
+- **`workspace-mover` styles and dialog semantics** unchanged in appearance; dialogs gained an accessible name, initial focus, and a Tab trap.
+
+### Added
+
+- **`screenshots.json`**: declares the plugin's screenshots in-repository so plugin storefronts (dsh-market and peers) show them App Store style in a controlled order instead of scraping the README.
+- **`peerDependencies`** for the official packages the plugin actually integrates with, each with an explicit prerelease `||` branch, plus `peerDependenciesMeta` marking the client-only ones optional. A peer range without an explicit prerelease branch silently excludes every prerelease DSH build (node-semver requires a comparator sharing the exact `major.minor.patch` tuple *and* carrying a prerelease tag), which surfaces to users as an `ERESOLVE` they have to work around by hand.
+- **Storage-layout self-check.** The plugin re-implements the session-store directory encoding, and the persistence root it derives from is not a documented part of the `SessionPersistence` contract. A new read-only check reverse-derives one real session's directory from `persistence.list()` and verifies it exists; the result appears as `mover.status.capabilities.storageLayout` and as a `data-layout` check in `mover_doctor`, so a host layout change becomes a visible degraded state instead of sessions that silently cannot be found.
+- **Archive-truncation visibility.** The rescue scan parses only the newest 400 session archives, and archived sessions are typically old — so on large libraries they could drop out of the archived list with no explanation. The archived view now reports when the underlying scan was truncated.
+- **Client test coverage.** `test/client-dom.test.mjs` exercises the client half against a hand-rolled DOM stub (no new dependencies): workspace resolution, row-to-id mapping, the drop payload, listener teardown, dialog dismissal and the RPC failure matrix.
+
+### Fixed
+
+- **Client half had no teardown.** Seven document-level listeners and a `document.body` subtree `MutationObserver` were never released. The project's own hot-reload path (the desktop client disposes and recomposes the plugin fiber) could therefore stack a second copy of every listener, causing duplicate confirm dialogs, duplicate RPC calls, and two copies fighting over the same selection highlight. All listeners and the observer are now registered through the plugin context's disposal channel, and a module-level guard prevents a duplicate `apply`.
+- **The menu observer no longer runs for the whole page lifetime.** It is connected after an ellipsis click and disconnected on injection or timeout, instead of observing every DOM mutation in the app forever.
+- **Dead and contradictory client strings.** `ungroupedUnsupported` was never referenced. `pickEscHint` was never referenced *and* contradicted the implementation; Escape now respects the copy (it does not clear the multi-selection while a text input has focus). Two hard-coded English strings that leaked into the Chinese UI are now localized.
+- **Documentation drift**: the READMEs and `docs/ARCHITECTURE.md` described three agent tools while four are registered (`mover_doctor` was missing), and the compatibility section still claimed verification against `0.1.5-rc.1` while the README badge claimed `0.2.0-rc.2`. Tool tables, the compatibility boundary, and the test-suite description are now consistent and dated.
+
 ## [2.1.1] - 2026-10-05
 
 ### Added
