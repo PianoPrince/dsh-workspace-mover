@@ -280,8 +280,9 @@ Every migration runs through the same safety-bounded pipeline: **byte-level back
 - **Tunable policies**: backup retention / history length / batch cap / repoint cap / scan cap / cleanup age accept environment overrides (`DSH_WORKSPACE_MOVER_*`)
 - **Official APIs replace private coupling**: unarchive uses the official `registry.unarchiveSession` (with a fallback path); title sync uses official `entity.setTitle` and is decoupled from the path redirect; `record.sessionIds` reads are consolidated into one accessor
 - **Accessibility and copy**: dialogs gain `aria-labelledby`, initial focus and a Tab trap; Esc respects "not while typing in the composer"; dead strings removed and two hard-coded English strings localized, with a zh/en key-parity warning
-- **Ecosystem metadata**: `screenshots.json` lets the plugin control its storefront card; `peerDependencies` carry explicit prerelease branches; long-standing tool-count and compatibility drift in the READMEs/ARCHITECTURE is corrected
-- Tests 108 → 141 (10 client DOM cases, 10 policy/Config cases, plus host-side capability-flag, self-check and backup-GC coverage)
+- **Ecosystem metadata**: `screenshots.json` lets the plugin control its storefront card; host-package `peerDependencies` are declared as `*` and optional (metadata only — the real floor is `engines.dsh`, and any runtime mismatch is reported through capability flags); long-standing tool-count and compatibility drift in the READMEs/ARCHITECTURE is corrected
+- **Fixed**: those peer ranges were first written in the ecosystem's "explicit prerelease branch" idiom, which made the host declare this plugin **incompatible with `0.2.0-rc.2`** — an upper bound of `<0.2.0-0` excludes *every* 0.2.0 prerelease, because npm evaluates each `||` alternative as a set and `0.2.0-rc.2 > 0.2.0-0`. All eight are now `*`, with a regression test spanning 0.1.5-rc.1 through 1.0.0
+- Tests 108 → 144 (10 client DOM cases, 13 policy/Config/peer-range cases, plus host-side capability-flag, self-check and backup-GC coverage)
 
 ### v2.1.1 · 2026-10-05
 

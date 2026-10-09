@@ -38,15 +38,16 @@
     "node": ">=22",
     "dsh": ">=0.1.5-rc.1"
   },
+  "//peerDependencies": "Deliberately `*`. These are OPTIONAL peers: the plugin declares them so storefronts can see the host packages it integrates with, but it fail-softs at runtime (mover.status capabilities + mover_doctor). npm's prerelease rule evaluates each `||` alternative as a set and only admits a prerelease when a comparator in that set shares the version's exact major.minor.patch tuple AND carries a prerelease tag -- so an upper bound like `<0.2.0-0` excludes EVERY 0.2.0 prerelease, which made the host report 2.2.0 as incompatible with 0.2.0-rc.2. Enumerating release lines would keep producing false incompatibilities on each new line; the real floor is engines.dsh, and capability flags report any actual runtime mismatch. Do NOT narrow these to version ranges.",
   "peerDependencies": {
-    "@deepseek-ai/cordis": ">=4.0.0-rc <5",
-    "@deepseek-ai/dsh-session": ">=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0",
-    "@deepseek-ai/dsh-tools": ">=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0",
-    "@deepseek-ai/dsh-workspace": ">=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0",
-    "@deepseek-ai/schemastery": ">=3.18.1-rc.1 <4",
-    "@deepseek-ai/dsh-client-connection": ">=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0",
-    "@deepseek-ai/dsh-client-locale": ">=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0"
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-session": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/dsh-workspace": "*",
+    "@deepseek-ai/schemastery": "*",
+    "@deepseek-ai/dsh-client-connection": "*",
+    "@deepseek-ai/dsh-client-locale": "*",
+    "@deepseek-ai/dsh-client-ui-slots": "*"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {

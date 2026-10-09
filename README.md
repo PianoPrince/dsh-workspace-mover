@@ -292,8 +292,9 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 - **策略可调**：备份份数 / 历史条数 / 单批上限 / 搬家上限 / 扫描上限 / 清理天数支持环境变量覆盖（`DSH_WORKSPACE_MOVER_*`）
 - **官方接口替代私有耦合**：取消归档改走官方 `registry.unarchiveSession`（保留回退通道）；标题同步改用官方 `entity.setTitle` 并与路径重定向解耦；`record.sessionIds` 的读取收敛为单一访问器
 - **可达性与文案**：弹窗补 `aria-labelledby`、打开即聚焦、Tab 循环；Esc 尊重"输入框聚焦时不清空"；清理死文案与两处漏出的英文硬编码，新增中英词条对账告警
-- **生态元数据**：新增 `screenshots.json`（自主控制市场卡片截图）；声明带显式预发布分支的 `peerDependencies`；修正 README/ARCHITECTURE 中长期存在的工具数量与兼容性描述漂移
-- 测试 108 → 141（新增客户端 DOM 用例 10 个、策略与 Config 用例 10 个，以及能力位/自检/备份 GC 等宿主侧用例）
+- **生态元数据**：新增 `screenshots.json`（自主控制市场卡片截图）；声明宿主包 `peerDependencies`（全部 `*` 且标 optional——它们只是元数据，真正的版本下限是 `engines.dsh`，运行时不匹配由能力位如实上报）；修正 README/ARCHITECTURE 中长期存在的工具数量与兼容性描述漂移
+- **修正**：上述 peer 范围最初按生态惯例写成"显式预发布分支"，结果宿主把本插件判为**与 `0.2.0-rc.2` 不兼容**——`<0.2.0-0` 这个上界会排除**所有** 0.2.0 预发布版（npm 的预发布规则按 `||` 集合逐条判定，且 `0.2.0-rc.2 > 0.2.0-0`）。现全部改为 `*`，并加了回归测试覆盖 0.1.5-rc.1 ~ 1.0.0
+- 测试 108 → 144（新增客户端 DOM 用例 10 个、策略/Config 与 peer 范围回归用例 13 个，以及能力位/自检/备份 GC 等宿主侧用例）
 
 ### v2.1.1 · 2026-10-05
 

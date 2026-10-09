@@ -66,6 +66,19 @@ Single logical channel `/workspace-mover` via `ctx.connection.rpc.handle('/works
 
 An unparseable or out-of-range value falls back to the default, so a bad configuration can never disable a feature.
 
+### Dependency declaration, and why every peer is `*`
+
+`package.json` declares the eight host packages this plugin integrates with as `peerDependencies`, all `*` and all `optional` in `peerDependenciesMeta`. They are **declarative metadata for storefronts**, not a compatibility gate: the plugin fail-softs at runtime and reports any real degradation through `mover.status` capabilities and `mover_doctor`. The real floor is `engines.dsh` (`>=0.1.5-rc.1`) plus `engines.node`.
+
+This was not the first attempt. The ranges originally used the ecosystem's "explicit prerelease branch" idiom, e.g. `>=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0`, and the host then reported the plugin as **incompatible with `0.2.0-rc.2`** — its own tested host line. The mechanism, confirmed by running dsh-market's own range evaluator:
+
+- npm's prerelease rule is evaluated at the **comparator-set level**: one `||` alternative is one set, and a prerelease version satisfies that set only when at least one comparator in it shares the version's exact `[major, minor, patch]` tuple *and* carries a prerelease tag; only then are all comparators checked normally.
+- `<0.2.0-0` does share the `0.2.0` tuple and does carry a prerelease, so the set is admitted — but `0.2.0-rc.2 > 0.2.0-0` (the `-0` sentinel sorts below every real prerelease), so the bound then excludes **every** 0.2.0 prerelease.
+
+Enumerating release lines reproduces the fault on each new line: a `<0.3.0-0` bound breaks the moment a 0.3 prerelease ships. Hence `*`. dsh-market filters peer declarations to `/^@deepseek-ai\/dsh(?:-|$)/`, which is also why `@deepseek-ai/cordis` and `@deepseek-ai/schemastery` were never named in the warning — they are only evaluated when `engines.dsh` mentions them, and it does not.
+
+`test/policy.test.mjs` asserts that the declared ranges plus `engines.dsh` derive `compatible` — never `incompatible` — for DSH versions from `0.1.5-rc.1` through `1.0.0`.
+
 **Official Config is deliberately not registered.** The schema would need `@deepseek-ai/schemastery`, which the host loader provides but which is not resolvable from this plugin's directory (verified by `createRequire` from `lib/index.js`); the npm `schemastery` has no `.volatile()` either. Because a bundle-layer static import failure breaks **boot** (a documented ecosystem failure class), `lib/config.js` never imports it — it exposes `buildConfig(z)` / `attachConfig(moduleOrBuilder)` so a host that hands over a schema builder can attach one, and exports `Config === undefined` otherwise. `buildConfig` contains all its own failures and returns `undefined` rather than throwing.
 
 ### Official-API preference is observable

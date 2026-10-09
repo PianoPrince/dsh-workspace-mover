@@ -257,3 +257,133 @@ test('attachConfig 支持 { default: z } 形态的模块对象', () => {
 });
 //#endregion
 
+//#region peer 范围的预发布语义（曾导致宿主判定"与 0.2.0-rc.2 不兼容"）
+//
+// 这里自带一份最小 semver 判定，而不是 import dsh-market：CI 不安装它。
+// 刻意复刻 npm 的预发布规则——**按 `||` 集合逐条判定**：带预发布标签的版本，只有在
+// 某个集合中「存在一个比较符，其 major.minor.patch 与该版本完全相同**且自身也带
+// 预发布标签**」时，才继续逐条比较；否则该集合直接不匹配。
+// （dsh-market 的 lib/check.js → satisfiesRange 是同一实现，宿主判定用 includePrerelease。）
+
+function parseSemver(v) {
+  const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(String(v));
+  if (!m) return null;
+  return { major: +m[1], minor: +m[2], patch: +m[3], pre: m[4] ? m[4].split('.') : [] };
+}
+function comparePre(a, b) {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i], y = b[i];
+    if (x === undefined) return -1;
+    if (y === undefined) return 1;
+    if (x === y) continue;
+    const xn = /^\d+$/.test(x), yn = /^\d+$/.test(y);
+    if (xn && yn) return Number(x) - Number(y) || 0;
+    if (xn) return -1;
+    if (yn) return 1;
+    return x < y ? -1 : 1;
+  }
+  return 0;
+}
+function cmp(a, b) {
+  if (a.major !== b.major) return a.major - b.major;
+  if (a.minor !== b.minor) return a.minor - b.minor;
+  if (a.patch !== b.patch) return a.patch - b.patch;
+  if (a.pre.length === 0 && b.pre.length === 0) return 0;
+  if (a.pre.length === 0) return 1;
+  if (b.pre.length === 0) return -1;
+  return comparePre(a.pre, b.pre);
+}
+function parseComparator(part) {
+  const m = /^(>=|<=|>|<|=)?\s*(.+)$/.exec(String(part).trim());
+  if (!m) return null;
+  const v = parseSemver(m[2]);
+  return v ? { op: m[1] ?? '=', v } : null;
+}
+function satisfiesSet(version, parts, includePrerelease) {
+  const v = parseSemver(version);
+  if (!v) return null;
+  const comps = parts.map(parseComparator);
+  if (comps.some((c) => c === null)) return null;
+  if (v.pre.length > 0 && !includePrerelease) {
+    // 预发布准入（npm 默认）：集合里必须有一个比较符与该版本 tuple 相同且自带预发布
+    const admits = comps.some((c) => c.v.major === v.major && c.v.minor === v.minor
+      && c.v.patch === v.patch && c.v.pre.length > 0);
+    if (!admits) return false;
+  }
+  for (const c of comps) {
+    const d = cmp(v, c.v);
+    if (c.op === '>' && !(d > 0)) return false;
+    if (c.op === '>=' && !(d >= 0)) return false;
+    if (c.op === '<' && !(d < 0)) return false;
+    if (c.op === '<=' && !(d <= 0)) return false;
+    if (c.op === '=' && d !== 0) return false;
+  }
+  return true;
+}
+/**
+ * 宿主/发现路径**始终**以 includePrerelease=true 评估（DSH 的每条发布线本身都是预发布）。
+ *
+ * `*` 在此处按"匹配一切"处理，与 dsh-market 在它自己实际使用的模式（includePrerelease）
+ * 下的结果一致。唯一的已知差异：该实现在默认模式下对预发布版本返回 false（它把 `*`
+ * 交给比较符解析，于是预发布准入规则把它挡掉）。本插件只关心宿主真正使用的评估路径，
+ * 因此这里不复制那个差异——但如实记录在此，避免以后被误读为"与宿主完全同构"。
+ */
+function satisfiesRange(version, range, includePrerelease = false) {
+  if (String(range).trim() === '*') return true;
+  return String(range).split('||')
+    .some((alt) => satisfiesSet(version, alt.trim().split(/\s+/).filter(Boolean), includePrerelease));
+}
+
+const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+
+test('peer 范围不与任何 DSH 版本判为不兼容（0.2.0-rc.2 事故回归）', () => {
+  const HOST = /^@deepseek-ai\/dsh(?:-|$)/;
+  const VERSIONS = ['0.1.5-rc.1', '0.1.5-rc.2', '0.1.6-alpha.2', '0.1.7-rc.1', '0.1.7-rc.2',
+    '0.2.0-rc.1', '0.2.0-rc.2', '0.2.0', '0.3.0-rc.1', '1.0.0'];
+  for (const v of VERSIONS) {
+    const decls = [];
+    const engine = satisfiesRange(v, pkg.engines.dsh, true);
+    if (engine !== null) decls.push(['engines.dsh', engine]);
+    for (const [name, range] of Object.entries(pkg.peerDependencies ?? {})) {
+      if (!HOST.test(name)) continue; // 与 dsh-market 同一套过滤
+      const r = satisfiesRange(v, range, true);
+      if (r === null) continue;
+      decls.push([name, r]);
+    }
+    assert.ok(!decls.some(([, r]) => r === false),
+      `DSH ${v} 被判为不兼容：${JSON.stringify(decls.filter(([, r]) => r === false))}`);
+  }
+});
+
+test('peer 范围不得使用 <X.Y.Z-0 这类会吃掉整条预发布线的上界', () => {
+  // 锁定事故根因：0.2.0-rc.2 > 0.2.0-0，所以 <0.2.0-0 排除所有 0.2.0 预发布。
+  assert.ok(cmp(parseSemver('0.2.0-rc.2'), parseSemver('0.2.0-0')) > 0,
+    '-0 哨兵必须小于真实预发布——这正是上界失效的原因');
+  // 关键：即使按宿主那套 includePrerelease 评估，旧写法仍然不匹配
+  assert.equal(satisfiesRange('0.2.0-rc.2', '>=0.1.0-rc.1 <0.2.0-0', true), false,
+    '旧写法在 includePrerelease 下也必须判为不匹配，否则本回归测试失效');
+  assert.equal(satisfiesRange('0.2.0-rc.2', '>=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0', true), false,
+    '这正是被宿主报为不兼容的那个范围');
+  assert.equal(satisfiesRange('0.2.0-rc.2', '*', true), true, '现行写法必须匹配');
+
+  for (const [name, range] of Object.entries(pkg.peerDependencies ?? {})) {
+    assert.ok(!/<\d+\.\d+\.\d+-0/.test(range),
+      `${name} 的范围 "${range}" 使用了 <X.Y.Z-0 上界，会排除整条预发布线`);
+  }
+});
+
+test('engines.dsh 仍是真实下限：比下限更老的宿主必须判为不兼容', () => {
+  // 宽松不等于没有下限——下限由 engines 承担，必须真的挡住更老的宿主。
+  for (const older of ['0.1.4', '0.1.0', '0.0.9', '0.0.1']) {
+    assert.equal(satisfiesRange(older, pkg.engines.dsh), false, `${older} 必须低于下限`);
+  }
+  // 下限本身必须成立。
+  assert.equal(satisfiesRange('0.1.5-rc.1', pkg.engines.dsh), true);
+  // 注意：npm 默认语义下，跨 tuple 的预发布（0.2.0-rc.2 vs >=0.1.5-rc.1）本来就**不**被
+  // 接纳——这正是宿主在发现路径上显式传 includePrerelease 的原因。所以按宿主那套评估，
+  // 真实的 0.2.0-rc.2 必须通过（见上一条用例的版本矩阵）。
+  assert.equal(satisfiesRange('0.2.0-rc.2', pkg.engines.dsh, true), true,
+    'includePrerelease（宿主用法）下 0.2.0-rc.2 必须满足下限');
+});
+//#endregion
+

@@ -155,6 +155,16 @@ const byIndex = idx >= 0 && idx < list.length ? list[idx] : null;   // :1712-171
    - **不带显式预发布分支的 peer 范围会静默排除 harness 的所有预发布构建**——`>=0.1.5-rc.1` 这类写法看着宽，但在 `0.1.6-rc.1` 上会因为 tuple 上没有带预发布标签的比较符而被排除，用户 `npm install` 会撞上 `ERESOLVE` 手工解决。指南给的正确形态是 `>=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0`。
    - 插件实际用到的宿主包（`@deepseek-ai/cordis`、`@deepseek-ai/dsh-tools`、`@deepseek-ai/dsh-client-connection`、`@deepseek-ai/dsh-client-ui-slots`）应逐条声明，不适用的在 `peerDependenciesMeta` 标 optional（`dshmarket` 就是这么做的）。这同时会让 dsh-market 的"宿主要求"从"未知"变成可核对的声明。
 
+   > ⚠️ **实施教训：指南给的这串"正确形态"不能照抄。** 我按它写成了
+   > `>=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0`，结果宿主直接报
+   > **"dsh-workspace-mover@2.2.0 与 DSH 0.2.0-rc.2 不兼容"**——而 0.2.0-rc.2 正是插件实测过的宿主线。
+   > 根因：`-0` 哨兵小于任何真实预发布（`0.2.0-rc.2 > 0.2.0-0`），所以 `<0.2.0-0` 这个"上界"
+   > 会把**整条 0.2.0 预发布线**排除掉；而 npm 的预发布规则是按 `||` 集合判定的，恰好让这个
+   > 集合被接纳、再被上界否掉。把上界提前一个小版本（`<0.3.0-0`）只是把炸弹挪到下一条线。
+   > **结论：这类"显式预发布分支"写法只适用于你愿意逐条枚举发布线的场合；对 fail-soft 的
+   > optional peer，`*` 才是正确选择，真正的版本下限交给 `engines.dsh`。** 详见 5.2 节经验教训
+   > 与 `test/policy.test.mjs` 的回归用例（已用 dsh-market 自己的 `satisfiesRange` 逐格对照验证）。
+
 2. **没有 `screenshots.json`。** 官方约定：在 `package.json` 同级放 `screenshots.json`，列出 1–8 张仓库内相对路径图片，市场详情页会以 App Store 风格展示。插件已有 8 张截图在 `docs/media/`，**不声明就只能靠市场从 README 里抓**——控制不了顺序与选片。这是全文成本最低、收益最直观的一条（约 10 行 JSON）。
 
 3. **README 已有的"已知限制"不够醒目。** 同类插件把版本兼容矩阵放在 README 顶部级别的显著位置；本插件的矩阵在 `README.md:218-232`，且与 `docs/ARCHITECTURE.md:119-128`（仍只写 "Verified: `0.1.5-rc.1`"）不一致——**这个不一致会被 dsh-market 直接读 `engines.dsh` 后放大**：README 徽章宣称 "DSH tested 0.2.0-rc.2"，manifest 却只声明下限 `>=0.1.5-rc.1`。
@@ -210,7 +220,7 @@ const byIndex = idx >= 0 && idx < list.length ? list[idx] : null;   // :1712-171
 | 1 | 补 `screenshots.json`（`docs/media/` 的 8 张图） | 10 分钟 | 生态收益最直观，零风险 |
 | 2 | 修文档漂移（工具数量 ×3 处、测试数、ARCHITECTURE 的 Verified 版本） | 1 小时 | 会被 dsh-market 放大，且描述不实是收录被打回的主因 |
 | 3 | 布局自证前置检查 + `status`/`doctor` 上报（P0-a） | 半天 | 把"突然全搬不动"变成"启动即提示"，性价比最高 |
-| 4 | 声明 `peerDependencies`（带显式预发布 `\|\|` 分支）+ `peerDependenciesMeta` | 1 小时 | 直接影响安装成功率与市场卡片 |
+| 4 | 声明 `peerDependencies` + `peerDependenciesMeta` | 1 小时 | 直接影响安装成功率与市场卡片。**注意别照抄指南的"显式预发布分支"示例**——它会把整条预发布线排除掉（见第九章第 1 条） |
 | 5 | 客户端 teardown + 防重复 apply（第四章） | 半天 | 已知会发生（项目自己的 CHANGELOG 记录过），且会引发双弹窗/双 RPC |
 | 6 | 禁止多选路径猜 id + 位置兜底自证（第五章 5.1/5.2） | 1 天 | 5.1 实测风险被高估（见该节修正），5.2 是**实测可复现**的活跃缺陷；两项都已改为显式契约 |
 | 7 | 补 `test/client-dom.test.mjs`（先测 6 的两个回归） | 1 天 | 锁死第 6 条，否则会再退化 |
@@ -250,7 +260,7 @@ const byIndex = idx >= 0 && idx < list.length ? list[idx] : null;   // :1712-171
 |--------|------|----------|
 | P1.1 `screenshots.json` | ✅ 7 张，路径全部校验存在且合规 | 仓库根新增；不在 `files` 内 |
 | P1.2 文档漂移 | ✅ 工具数量 4 处、兼容矩阵日期化、测试数改为由运行报告 | README / README_EN / ARCHITECTURE / lib 注释 |
-| P1.3 `peerDependencies` | ✅ 8 条，全部带显式预发布 `\|\|` 分支 + `peerDependenciesMeta` optional | 自检断言"每条范围都带预发布标签" |
+| P1.3 `peerDependencies` | ✅ 8 条，**全部 `*` 且标 optional**（首版按官方示例写成显式预发布分支，导致宿主报"与 0.2.0-rc.2 不兼容"，见第九章第 1 条的教训块） | 回归用例覆盖 0.1.5-rc.1 ~ 1.0.0，且与 dsh-market 的 `satisfiesRange` 逐格对照 |
 | P2 多选不猜 id | ✅ `mapGroupRows` 返回 `{map, unresolved}`；变更路径遵守"宁可不做" | 用例：错配 id 绝不能进入 payload；全部无法识别则不发 RPC |
 | P3.1 分组解析自证 | ✅ 删除无条件位置回退 | 用例复现旧行为把会话搬进"目录已失效的分组"，现已中止 |
 | P3.2 存储布局自检 | ✅ `verifyStorageLayout` + `status.capabilities.storageLayout` + `doctor` 的 `data-layout` | 3 个用例覆盖 ok / degraded / empty |
