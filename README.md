@@ -9,7 +9,7 @@
   <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.1.1-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.2.0-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="DSH tested 0.2.0-rc.2" src="https://img.shields.io/badge/DSH_tested-0.2.0--rc.2-4c8dff" style="height:20px; margin:0 2px;" />
     <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
   </p>
@@ -42,7 +42,7 @@
 - [🤝 与其他插件共存](#-与其他插件共存)
 - [🧩 兼容性与卸载](#-兼容性与卸载)
 - [🔐 安全台账](#-安全台账safety-ledger)
-- [⚠️ 已知限制](#️-已知限制)
+- [⚠️ 已知限制](#️-已知限制)（含 [可调策略](#-可调策略环境变量)）
 - [🆕 最近版本](#-最近版本)
 
 ---
@@ -61,7 +61,7 @@ DeepSeek Harness 侧边栏可以拖拽排序**同一工作区**内的会话，�
 - **⏪ 移动历史与撤回**：记录最近 100 次跨工作区移动，批量聚合为一条，整批可一键撤回
 - **🧾 迁移任务中心**：批量迁移逐项持久化记录（完成/失败、最后错误与尝试时间），失败项一键重试——按会话当前位置重新迁移，不用陈旧路径
 - **📂 空分组清理 / 打开文件夹**：只列出真正零成员的工作区；组菜单可直达系统文件管理器
-- **🤖 Agent 工具**：`mover_list_sessions` / `mover_move_session` / `mover_repair_sessions` 三个模型可调用工具——在对话里说「把这个会话挪到某组」即可触发与面板完全相同的备份回滚管线；迁移与修复执行前经宿主审批弹窗确认，未装 dsh-tools 的宿主自动停用
+- **🤖 Agent 工具**：`mover_list_sessions` / `mover_move_session` / `mover_repair_sessions` / `mover_doctor` 四个模型可调用工具——在对话里说「把这个会话挪到某组」即可触发与面板完全相同的备份回滚管线；迁移与修复执行前经宿主审批弹窗确认，未装 dsh-tools 的宿主自动停用
 
 ## 🚀 安装
 
@@ -173,9 +173,9 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 
 ### 对话里迁移（Agent 工具）
 
-1. 装有 `dsh-tools` 的宿主（web 与桌面版默认）自动注册三个模型工具：清单（只读）、迁移、一键修复；
-2. 在对话里说「列出我的会话」「把会话 X 挪到 Y 组」「跑一次修复」——模型先用清单工具把名字解析成精确 id，再执行动作；
-3. 迁移与修复在动手前经宿主审批弹窗请你确认（与面板确认同级）；拒绝或关闭弹窗则不执行；
+1. 装有 `dsh-tools` 的宿主（web 与桌面版默认）自动注册四个模型工具：清单与会话清单（只读）、迁移、一键修复、自检（只读）；
+2. 在对话里说「列出我的会话」「把会话 X 挪到 Y 组」「跑一次修复」「自检一下」——模型先用清单工具把名字解析成精确 id，再执行动作；
+3. 迁移与修复在动手前经宿主审批弹窗请你确认（与面板确认同级）；拒绝或关闭弹窗则不执行；两个只读工具（清单 / 自检）不弹确认；
 4. 宿主没有 `dsh-tools` 时自动停用，不影响面板与拖拽。
 
 ### 批量迁移
@@ -260,11 +260,40 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 
 - 不支持把会话移入「Ungrouped」桶；
 - 常驻内存的会话（近期打开过）不能直接删除，请重启 Harness 后再删；
-- 若第三方插件整页重绘侧边栏，本插件可能暂时无法识别会话行（功能不触发，**不损坏数据**）；
+- 若第三方插件整页重绘侧边栏，本插件可能暂时无法识别会话行（功能触发不了，**不损坏数据**）；批量拖拽时无法确认身份的行会被跳过并明确告知，不会猜一个 id 去移动；
 - 「扁平列表」视图无工作区标题行，本插件在该视图不激活；
-- 宿主大版本升级若改变内部结构，相关能力可能降级或需重启后生效；搬家向导在无法安全写入时会在改动任何文件之前中止并提示。
+- 宿主大版本升级若改变内部结构，相关能力可能降级或需重启后生效；搬家向导在无法安全写入时会在改动任何文件之前中止并提示；
+- **没有图形化设置页**：官方设置页需要宿主提供 `schemastery`（插件目录下不可解析，静态引入会打断启动）。策略改用环境变量配置，见下表；`mover_doctor` 会报告宿主服务与存储布局的降级情况；
+- **降级是可观测的**：插件优先使用官方接口（取消归档 `registry.unarchiveSession`、改名 `entity.setTitle`），宿主没有时自动回退到等价实现。回退是静默的（功能不变），所以 `mover.status.capabilities` 会同时给出 `unarchiveApi` / `setTitleApi` 能力位，`degradedFeatures` 里也会列出 `unarchive-official-api` / `set-title-official-api`——真机上一眼能看出走的是哪条路。
+
+### 🔧 可调策略（环境变量）
+
+| 策略 | 默认 | 环境变量 |
+|------|------|----------|
+| 每个会话保留的备份份数 | 20 | `DSH_WORKSPACE_MOVER_BACKUP_KEEP` |
+| 移动历史保留条数 | 100 | `DSH_WORKSPACE_MOVER_HISTORY_LIMIT` |
+| 单批移动 / 修复上限 | 50 | `DSH_WORKSPACE_MOVER_BATCH_LIMIT` |
+| 单个工作区搬家上限 | 200 | `DSH_WORKSPACE_MOVER_REPOINT_LIMIT` |
+| 救援扫描解析上限 | 400 | `DSH_WORKSPACE_MOVER_SCAN_LIMIT` |
+| 「清理 N 天前数据」默认天数 | 30 | `DSH_WORKSPACE_MOVER_CLEANUP_DAYS` |
+
+取值非法或越界时回退默认值——配置写错不会让功能失效。
 
 ## 🆕 最近版本
+
+### v2.2.0 · 2026-10-09
+
+- **批量移动不再"猜"会话身份**：权威 id 通道不可用时，旧兜底会按顺序顶替一个 id；现在无法确认的行一律跳过并在确认框里如实说明（全部无法识别则整体中止，不动任何文件）
+- **目标分组解析必须自证**：标题/路径都不匹配时不再按 DOM 序号回退——官方侧边栏会隐藏目录已失效的分组，按序号回退会把会话搬进相邻分组
+- **客户端热重载不再叠加实例**：7 个监听器与菜单 observer 全部经宿主 effect 释放，并加防重复装载；此前重载会叠加第二份，出现双确认框与双请求
+- **存储布局自检**：反推一个真实会话的目录并验证，结果进入 `mover.status` 与自检面板（`data-layout`），把"某天突然全都找不到"提前变成可见的降级提示
+- **孤儿备份可见可清**：会话彻底删除后其迁移备份会永久残留；现在会标记孤儿组并支持一键清理，「彻底删除」时也可顺带勾选清理
+- **归档列表说明截断**：扫描只解析最新 400 条，较旧的归档会话可能不在列表中——UI 现在会说明
+- **策略可调**：备份份数 / 历史条数 / 单批上限 / 搬家上限 / 扫描上限 / 清理天数支持环境变量覆盖（`DSH_WORKSPACE_MOVER_*`）
+- **官方接口替代私有耦合**：取消归档改走官方 `registry.unarchiveSession`（保留回退通道）；标题同步改用官方 `entity.setTitle` 并与路径重定向解耦；`record.sessionIds` 的读取收敛为单一访问器
+- **可达性与文案**：弹窗补 `aria-labelledby`、打开即聚焦、Tab 循环；Esc 尊重"输入框聚焦时不清空"；清理死文案与两处漏出的英文硬编码，新增中英词条对账告警
+- **生态元数据**：新增 `screenshots.json`（自主控制市场卡片截图）；声明带显式预发布分支的 `peerDependencies`；修正 README/ARCHITECTURE 中长期存在的工具数量与兼容性描述漂移
+- 测试 108 → 141（新增客户端 DOM 用例 10 个、策略与 Config 用例 10 个，以及能力位/自检/备份 GC 等宿主侧用例）
 
 ### v2.1.1 · 2026-10-05
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-workspace-mover",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "description": "在 DSH 侧边栏安全迁移会话：真迁移原始档案，支持失联会话恢复、移动历史、一键撤回和 agent 工具。",
   "type": "module",
   "main": "lib/index.js",
@@ -18,9 +18,8 @@
     "docs/ARCHITECTURE.md",
     "docs/media",
     "LICENSE"
-  ],
-  "scripts": {
-    "test": "node --test test/core.test.mjs test/e2e-sandbox.test.mjs test/traffic-badge.test.mjs test/release-downloads.test.mjs",
+  ],  "scripts": {
+    "test": "node --test test/core.test.mjs test/e2e-sandbox.test.mjs test/policy.test.mjs test/client-dom.test.mjs test/traffic-badge.test.mjs test/release-downloads.test.mjs",
     "check:syntax": "node --check lib/index.js && node --check client/client.js",
     "check:pack": "npm pack --dry-run",
     "check": "npm run check:syntax && npm test && npm run check:pack"
@@ -38,6 +37,42 @@
   "engines": {
     "node": ">=22",
     "dsh": ">=0.1.5-rc.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.0-rc <5",
+    "@deepseek-ai/dsh-session": ">=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0",
+    "@deepseek-ai/dsh-tools": ">=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0",
+    "@deepseek-ai/dsh-workspace": ">=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0",
+    "@deepseek-ai/schemastery": ">=3.18.1-rc.1 <4",
+    "@deepseek-ai/dsh-client-connection": ">=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0",
+    "@deepseek-ai/dsh-client-locale": ">=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-workspace": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-connection": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-locale": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
+      "optional": true
+    }
   },
   "license": "MIT",
   "repository": {

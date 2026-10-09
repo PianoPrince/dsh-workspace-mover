@@ -1,3 +1,9 @@
 node_modules/
 *.log
 .DS_Store
+
+# git worktrees / 临时检出：内含整个仓库的副本，绝不能被主仓库提交。
+# 注意：git worktree 注册过的目录会有 .git 文件、且不受 .gitignore 影响，
+# 因此这里只覆盖"遗留的普通目录"这种最常见情况。
+.worktrees/
+

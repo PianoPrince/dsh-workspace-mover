@@ -10,7 +10,7 @@
   <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.1.1-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.2.0-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="DSH tested 0.2.0-rc.2" src="https://img.shields.io/badge/DSH_tested-0.2.0--rc.2-4c8dff" style="height:20px; margin:0 2px;" />
     <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
   </p>
@@ -62,7 +62,7 @@ DeepSeek Harness's sidebar supports drag-to-reorder **within** a workspace, but 
 - **⏪ Move history and undo**: last 100 cross-workspace moves; bulk operations aggregate into one undoable entry
 - **🧾 Task center**: bulk moves persist per-item state (done/failed, last error and attempt time); failed items retry in one click — from each session's CURRENT location, never a stale path
 - **📂 Empty-group cleanup / open folder**: only truly empty workspaces are listed; open a group directory in your file manager
-- **🤖 Agent tools**: three model-callable tools — `mover_list_sessions` / `mover_move_session` / `mover_repair_sessions` — so "move this session to group X" in the conversation runs the same backup-first pipeline as the panel; mutating tools ask for user approval first, and hosts without `dsh-tools` skip them automatically
+- **🤖 Agent tools**: four model-callable tools — `mover_list_sessions` / `mover_move_session` / `mover_repair_sessions` / `mover_doctor` — so "move this session to group X" in the conversation runs the same backup-first pipeline as the panel; mutating tools ask for user approval first, and hosts without `dsh-tools` skip them automatically
 
 ## 🚀 Install
 
@@ -174,9 +174,9 @@ Mid-turn sessions are rejected; failed moves roll back automatically.
 
 ### Conversational moves (agent tools)
 
-1. Hosts with `dsh-tools` (web and desktop by default) register three model tools: listing (read-only), move, and one-click repair;
-2. Say "list my sessions", "move session X to group Y", or "run a repair" — the model resolves names into exact ids with the listing tool first, then acts;
-3. Mutating tools raise a host approval prompt before acting (same level as the panel confirm); dismissing or denying means nothing happens;
+1. Hosts with `dsh-tools` (web and desktop by default) register four model tools: listing and doctor (both read-only), move, and one-click repair;
+2. Say "list my sessions", "move session X to group Y", "run a repair", or "run a self-check" — the model resolves names into exact ids with the listing tool first, then acts;
+3. Mutating tools raise a host approval prompt before acting (same level as the panel confirm); dismissing or denying means nothing happens; the two read-only tools never prompt;
 4. Hosts without `dsh-tools` skip the tools automatically — the panel and drag flows are unaffected.
 
 ### Bulk move
@@ -268,6 +268,20 @@ Every migration runs through the same safety-bounded pipeline: **byte-level back
 - Major host upgrades that change internal structures may degrade some actions or require a restart; the move-home wizard aborts before touching files if it cannot write safely.
 
 ## 🆕 Recent version
+
+### v2.2.0 · 2026-10-09
+
+- **Batch moves no longer *guess* a session's identity**: when the authoritative id channel is unavailable, the old fallback substituted the next id in order; unresolvable rows are now skipped and reported in the confirm dialog, and a move with nothing resolvable aborts without touching any file
+- **Target-group resolution must prove itself**: it no longer falls back to DOM position when neither title nor path matches — the official sidebar hides groups whose folder is gone, and the positional fallback moved sessions into a neighbouring group
+- **Client hot-reload no longer stacks instances**: all seven document listeners and the menu observer are released through the host effect channel, plus a duplicate-apply guard; re-loading used to stack a second copy (double confirm dialogs, duplicate requests)
+- **Storage-layout self-check**: one real session's directory is reverse-derived and verified, surfacing in `mover.status` and the Doctor panel (`data-layout`) so "one day everything is unfindable" becomes a visible degraded state instead
+- **Orphan backups are visible and cleanable**: a purged session left up to 20 migration backups on disk forever; orphans are now flagged with one-click cleanup, and "purge" offers to remove them too
+- **Archived list explains truncation**: the scan parses only the newest 400 archives, so older archived sessions can be missing — the UI now says so
+- **Tunable policies**: backup retention / history length / batch cap / repoint cap / scan cap / cleanup age accept environment overrides (`DSH_WORKSPACE_MOVER_*`)
+- **Official APIs replace private coupling**: unarchive uses the official `registry.unarchiveSession` (with a fallback path); title sync uses official `entity.setTitle` and is decoupled from the path redirect; `record.sessionIds` reads are consolidated into one accessor
+- **Accessibility and copy**: dialogs gain `aria-labelledby`, initial focus and a Tab trap; Esc respects "not while typing in the composer"; dead strings removed and two hard-coded English strings localized, with a zh/en key-parity warning
+- **Ecosystem metadata**: `screenshots.json` lets the plugin control its storefront card; `peerDependencies` carry explicit prerelease branches; long-standing tool-count and compatibility drift in the READMEs/ARCHITECTURE is corrected
+- Tests 108 → 141 (10 client DOM cases, 10 policy/Config cases, plus host-side capability-flag, self-check and backup-GC coverage)
 
 ### v2.1.1 · 2026-10-05
 
