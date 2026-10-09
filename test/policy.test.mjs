@@ -121,6 +121,9 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
+/** 让出 5ms：备份名以毫秒时间戳排序，用例需要可预测的先后顺序。 */
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function call(endpoint, payload) {
   return await rpcHandler(endpoint, payload ?? {});
 }
@@ -164,9 +167,32 @@ test('DSH_WORKSPACE_MOVER_BACKUP_KEEP 控制每会话备份保留份数', async 
   process.env.DSH_WORKSPACE_MOVER_BACKUP_KEEP = '3';
   apply(ctx);
   const dir = join(root, 'workspace-mover', 'backups');
-  for (let i = 0; i < 6; i++) stashBackup('session-keep', Buffer.from(`v${i}`));
+  // 每次备份之间推进时钟：备份名以毫秒时间戳排序，同一毫秒在 Windows 上会互相覆盖
+  //（这正是本用例最初在 Linux CI 上暴露的差异），显式等待让断言与平台无关。
+  for (let i = 0; i < 6; i++) {
+    stashBackup('session-keep', Buffer.from(`v${i}`));
+    await sleep(5);
+  }
   const kept = readdirSync(dir).filter((f) => f.startsWith('session-keep.'));
   assert.equal(kept.length, 3, `策略值 3 应只保留 3 份，实际 ${kept.length}`);
+  // 保留的必须是**最新**的 3 份
+  const newest = readFileSync(join(dir, kept.sort().at(-1))).toString();
+  assert.equal(newest, 'v5', `保留的应是最新内容，实际 ${newest}`);
+});
+
+test('同一毫秒内的连续备份不得互相覆盖（Linux CI 暴露的差异回归）', async () => {
+  apply(ctx);
+  const dir = join(root, 'workspace-mover', 'backups');
+  // 不推进时钟：模拟 Linux 上更粗的时钟粒度——两次 stash 极可能落在同一毫秒。
+  for (let i = 0; i < 5; i++) stashBackup('session-ms', Buffer.from(`m${i}`));
+  const files = readdirSync(dir).filter((f) => f.startsWith('session-ms.'));
+  const contents = files.map((f) => readFileSync(join(dir, f)).toString());
+  // 关键：每次备份都必须留下独立文件，而不是被后一次静默覆盖。
+  // 旧实现在同一毫秒会塌缩成 1 份（Windows 时钟粒度粗，掩盖了这个问题；Linux CI 直接挂掉）。
+  assert.equal(files.length, 5,
+    `同毫秒的 5 次备份应留下 5 份，实际 ${files.length} 份：${JSON.stringify(files)}`);
+  assert.deepEqual([...contents].sort(), ['m0', 'm1', 'm2', 'm3', 'm4'],
+    `每份备份的内容都必须保留，实际：${JSON.stringify([...contents].sort())}`);
 });
 
 test('非法环境变量回退默认值（配置错误不应让功能不可用）', async () => {

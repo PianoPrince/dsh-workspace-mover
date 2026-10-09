@@ -1223,7 +1223,7 @@ test('迁移流程级：残留目标目录给出明确错误，清理后同一�
   assert.ok(!existsSync(artifactPath(root, A, 'session-aaa')));
 });
 
-test('stashBackup：相邻前缀 id 的备份互不误删（前缀收紧）', () => {
+test('stashBackup：相邻前缀 id 互不误删；同一毫秒的连续备份互不覆盖', () => {
   const a = 'session-aaa';
   const b = 'session-aaa-1'; // a 的前缀超集；'-' < '.' 使其排序在 a 的所有备份之前（最旧）
   const dir = join(root, 'workspace-mover', 'backups');
@@ -1234,13 +1234,22 @@ test('stashBackup：相邻前缀 id 的备份互不误删（前缀收紧）', ()
   const files = readdirSync(dir);
   assert.equal(files.filter((f) => f.startsWith(`${b}.`)).length, 1, '相邻前缀 id 的备份不被误删');
   assert.equal(files.filter((f) => f.startsWith(`${a}.`)).length, 20, 'a 恰好保留最近 20 份');
-  // 同毫秒连续 stash：文件名相同被原子覆盖（last-wins），不报错、不破坏裁剪计数
-  stashBackup(a, Buffer.from('same-ms-1'));
-  stashBackup(a, Buffer.from('same-ms-2'));
-  const files2 = readdirSync(dir);
-  assert.equal(files2.filter((f) => f.startsWith(`${a}.`)).length, 20, '同毫秒覆盖不改变保留计数');
-  const newest = files2.filter((f) => f.startsWith(`${a}.`)).sort().at(-1);
-  assert.equal(readFileSync(join(dir, newest)).toString(), 'same-ms-2', '最新内容 last-wins');
+  // 同一毫秒的连续 stash：必须各自留下独立文件（曾因文件名相撞而静默覆盖，
+  // 使 backupKeep 失效——Linux CI 就是这样挂掉的）。
+  const msA = 'session-ms';
+  const countMs = () => readdirSync(dir).filter((f) => f.startsWith(`${msA}.`)).length;
+  stashBackup(msA, Buffer.from('ms-1'));
+  stashBackup(msA, Buffer.from('ms-2'));
+  assert.equal(countMs(), 2,
+    `同一毫秒的两次备份必须留下 2 份而不是互相覆盖，实际 ${countMs()} 份：${JSON.stringify(readdirSync(dir).filter((f) => f.startsWith(`${msA}.`)))}`);
+  const msContents = readdirSync(dir).filter((f) => f.startsWith(`${msA}.`)).map((f) => readFileSync(join(dir, f)).toString()).sort();
+  assert.deepEqual(msContents, ['ms-1', 'ms-2'], `两份备份的内容都必须保留，实际 ${JSON.stringify(msContents)}`);
+
+  // 裁剪计数仍受 backupKeep 约束：把 a 撑回 21 份后应回落到 20。
+  for (let i = 2000; i < 2021; i++) writeFileSync(join(dir, `${a}.${i}.zstd`), Buffer.from('v' + i));
+  stashBackup(a, Buffer.from('after-prune'));
+  assert.equal(readdirSync(dir).filter((f) => f.startsWith(`${a}.`)).length, 20, 'a 仍恰好保留 20 份');
+  assert.equal(readdirSync(dir).filter((f) => f.startsWith(`${b}.`)).length, 1, '相邻前缀 id 仍不受影响');
 });
 
 //#region v0.9：回收站 + 备份管理
