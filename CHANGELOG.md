@@ -22,6 +22,8 @@
 - **The menu observer no longer runs for the whole page lifetime.** It is connected after an ellipsis click and disconnected on injection or timeout, instead of observing every DOM mutation in the app forever.
 - **Dead and contradictory client strings.** `ungroupedUnsupported` was never referenced. `pickEscHint` was never referenced *and* contradicted the implementation; Escape now respects the copy (it does not clear the multi-selection while a text input has focus). Two hard-coded English strings that leaked into the Chinese UI are now localized.
 - **Documentation drift**: the READMEs and `docs/ARCHITECTURE.md` described three agent tools while four are registered (`mover_doctor` was missing), and the compatibility section still claimed verification against `0.1.5-rc.1` while the README badge claimed `0.2.0-rc.2`. Tool tables, the compatibility boundary, and the test-suite description are now consistent and dated.
+- **Tests 108 → 141**: 10 new client DOM cases (row/workspace resolution, drag payload, listener teardown, dialog dismissal and the RPC failure matrix, against a hand-rolled DOM stub), 10 policy/Config cases, and host-side coverage for the storage-layout self-check, archive truncation, backup orphan GC, the unarchive dual path, setTitle decoupling, and the official-API capability flags.
+- **Fixed a latent policy bug found while wiring the tunables**: `cleanupOldData` destructured `{ days = 30 }`, so "not supplied" became `30` and the `Number(days) || cleanupDays()` fallback could never see `undefined` — the configured cleanup age was silently shadowed by the default.
 
 ## [2.1.1] - 2026-10-05
 
