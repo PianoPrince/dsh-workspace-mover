@@ -28,7 +28,6 @@ window.__ModuleLoader__.load({
 				rolledBack: "已自动回滚：{msg}",
 				failed: "移动失败：{msg}",
 				noTarget: "无法识别目标工作区（侧边栏结构变化？）",
-				ungroupedUnsupported: "暂不支持移动到「未分组」",
 				staleList: "工作区列表与侧边栏不一致，请重试",
 				restartHint: "缓存失效失败：归属可能需要重启 Harness 后才刷新",
 				rescueSection: "会话修复",
@@ -58,6 +57,10 @@ window.__ModuleLoader__.load({
 				helpPath: "会话原来的文件夹被移动、改名或删除，所以侧边栏看不到它。选择一个分组，历史会原样迁移过去，会话 ID 保持不变。",
 				helpUnreg: "会话文件完好，只是还没有归属到任何工作区分组。点击按钮即可归入匹配的分组，文件不会移动。",
 				pickTarget: "请先在下拉框选择要移入的分组",
+				idUnresolved: "无法识别要移动的会话（侧边栏结构或标题有变化），已取消本次移动。请刷新页面后重试。",
+				idUnresolvedPartial: "有 {n} 行无法识别，将被跳过——本次只移动能确认身份的会话。",
+				batchTooMany: "单次最多移动 {max} 个会话（本次 {n} 个）",
+				dragPayloadBad: "无法读取拖拽内容（宿主版本变化？），已取消本次移动",
 				relinkBtn: "移入该分组",
 				attachBtn: "归入分组",
 				relinked: "✓ 已迁入「{title}」，历史原样保留",
@@ -91,13 +94,13 @@ window.__ModuleLoader__.load({
 		batchUndoPartial: "；{n} 个未能撤回（可重试）",
 				pickHint: "已选 {n} 个会话 · Ctrl+点击行可多选 · 拖到目标工作区标题行批量移动 · Esc 清空",
 				pickCleared: "已清空多选",
-				pickEscHint: "按 Esc 清空多选（输入框聚焦时无效）",
 				groupMoveTitle: "把「{title}」的会话移到…",
 				groupMoveHint: "整组会话将真迁移到目标分组；运行中的会话会被跳过并在结果中说明。",
 				groupMoveEmpty: "这个分组下没有可移动的会话。",
 				openFolderMenu: "打开文件夹",
 				archivedCaption: "已归档的会话",
 				archivedHelp: "这些会话被官方「归档」后从侧边栏消失，但文件和分组归属都还在。点「恢复」回到原来的分组，或选「恢复到…」换一个分组；恢复不会动文件。",
+				archiveTruncated: "注意：扫描只解析了最新 {parsed} / {total} 个会话档案，较旧的归档会话可能不在此列表中。",
 				restoreBtn: "恢复",
 				restoreToBtn: "恢复到…",
 				restorePickTitle: "把「{title}」恢复到…",
@@ -121,12 +124,20 @@ window.__ModuleLoader__.load({
 				purgeAllBtn: "清空回收站",
 				purgeAllConfirm: "彻底删除回收站里的全部 {n} 个会话？此操作不可撤销。",
 				purgedMsg: "✓ 已彻底删除 {n} 项",
+				purgeBackupsToo: "这个会话还有 {n} 份迁移备份。一并删除吗？\n\n（会话已不存在，这些备份不会再被用到；保留则可在备份列表里单独恢复或清理。）",
+				purgeBackupsDone: "（含 {n} 份备份）",
 				backupsCaption: "备份",
 				backupsHelp: "每次迁移前自动生成的字节级备份都在这里。可以把会话恢复回备份时的原位置（若那里没有同 id 会话），或恢复到任意其他分组。",
 				backupMeta: "{n} 份 · {size} · {range}",
 				backupDeleteBtn: "删除备份",
 				backupDeleteConfirm: "删除「{title}」的 {n} 份备份？删除后无法再从备份恢复。",
 				backupDeletedMsg: "✓ 已删除 {n} 份备份",
+				backupOrphanBadge: "孤儿",
+				backupOrphanHelp: "这个会话的档案已经不存在了（通常是被彻底删除）。这些备份不会被任何操作再引用，可以安全清理。",
+				backupOrphanSummary: "孤儿备份：{n} 组 · {size}（会话已不存在）",
+				backupOrphanCleanup: "清理孤儿备份",
+				backupOrphanConfirm: "删除 {n} 组孤儿备份（{size}）？这些会话已不存在，删除后无法从备份恢复。",
+				backupOrphanPartial: "✓ 已删除 {n} 份，{f} 组失败（可重试）",
 				residentRefuse: "该会话当前没有焦点也可能仍驻留在 Harness 内存中（归档只隐藏，不会卸载）。DSH 0.1.5 没有公开的按 ID 卸载接口，请重启 Harness 释放常驻会话后再删除。",
 				sessionBusy: "该会话正在处理中（可能有迁移 / 还原 / 删除操作尚未完成），请稍后再试。",
 				contextStale: "插件上下文已失效（客户端热重载导致）。请刷新页面（或重启应用）后重试，功能会自动恢复。",
@@ -146,6 +157,7 @@ window.__ModuleLoader__.load({
 				doctorDataHistory: "移动历史",
 				doctorDataTasks: "任务记录",
 				doctorRecovery: "恢复记录",
+				doctorDataLayout: "存储布局",
 				doctorWorkspaces: "工作区路径",
 				repairAllBtn: "一键修复",
 				repairAllDone: "✓ 已修复 {n} · 跳过 {s} · 失败 {f}",
@@ -175,7 +187,6 @@ window.__ModuleLoader__.load({
 				rolledBack: "Rolled back automatically: {msg}",
 				failed: "Move failed: {msg}",
 				noTarget: "Cannot resolve target workspace (sidebar layout changed?)",
-				ungroupedUnsupported: "Moving to \"Ungrouped\" is not supported yet",
 				staleList: "Workspace list out of sync with the sidebar; try again",
 				restartHint: "Cache invalidation failed: grouping may need a harness restart",
 				rescueSection: "Session Repair",
@@ -205,6 +216,10 @@ window.__ModuleLoader__.load({
 				helpPath: "The folder this session lived in was moved, renamed or deleted, so the sidebar cannot show it. Pick a group — history moves over as-is and the session ID stays the same.",
 				helpUnreg: "The session file is fine but no workspace claims it yet. Click to file it into the matching group; files are not moved.",
 				pickTarget: "Pick a target group in the dropdown first",
+				idUnresolved: "Could not identify the session to move (sidebar structure or titles changed); this move was cancelled. Refresh the page and try again.",
+				idUnresolvedPartial: "{n} row(s) could not be identified and will be skipped — this move only carries the sessions whose identity was confirmed.",
+				batchTooMany: "At most {max} sessions per move (this one had {n})",
+				dragPayloadBad: "Could not read the dragged content (host version change?); this move was cancelled",
 				relinkBtn: "Move there",
 				attachBtn: "File into group",
 				relinked: "✓ Moved into \"{title}\"; history preserved as-is",
@@ -238,13 +253,13 @@ window.__ModuleLoader__.load({
 		batchUndoPartial: "; {n} not undone (retry available)",
 				pickHint: "{n} sessions picked · Ctrl+click rows to multi-select · drag onto a workspace header to move in bulk · Esc to clear",
 				pickCleared: "Selection cleared",
-				pickEscHint: "Press Esc to clear the multi-selection (not while typing in the composer)",
 				groupMoveTitle: "Move sessions of \"{title}\" to…",
 				groupMoveHint: "The whole group will be truly moved to the target; running sessions are skipped and noted in the result.",
 				groupMoveEmpty: "No movable sessions in this group.",
 				openFolderMenu: "Open folder",
 				archivedCaption: "Archived sessions",
 				archivedHelp: "These sessions were hidden by the official \"archive\" action, but their files and group membership are intact. \"Restore\" sends them back to the original group, or \"Restore to…\" picks another one; restoring never touches files.",
+				archiveTruncated: "Note: the scan parsed only the newest {parsed} of {total} session archives, so older archived sessions may be missing from this list.",
 				restoreBtn: "Restore",
 				restoreToBtn: "Restore to…",
 				restorePickTitle: "Restore \"{title}\" to…",
@@ -268,12 +283,20 @@ window.__ModuleLoader__.load({
 				purgeAllBtn: "Empty recycle bin",
 				purgeAllConfirm: "Purge all {n} sessions in the recycle bin? This cannot be undone.",
 				purgedMsg: "✓ Purged {n} item(s)",
+				purgeBackupsToo: "This session still has {n} migration backup copy(ies). Delete them too?\n\n(The session no longer exists, so those backups will not be used again; keeping them lets you restore or clean them separately from the backup list.)",
+				purgeBackupsDone: " (including {n} backup copy(ies))",
 				backupsCaption: "Backups",
 				backupsHelp: "Every move creates a byte-level backup first; they are all listed here. Restore a session back to where the backup was taken (if no session with the same id lives there), or into any other group.",
 				backupMeta: "{n} copies · {size} · {range}",
 				backupDeleteBtn: "Delete backups",
 				backupDeleteConfirm: "Delete the {n} backup copies of \"{title}\"? They cannot be restored from afterwards.",
 				backupDeletedMsg: "✓ Deleted {n} backup copy(ies)",
+				backupOrphanBadge: "Orphan",
+				backupOrphanHelp: "This session's archive no longer exists (usually purged). These backups are no longer referenced by any operation and can be cleaned safely.",
+				backupOrphanSummary: "Orphan backups: {n} group(s) · {size} (session no longer exists)",
+				backupOrphanCleanup: "Clean orphan backups",
+				backupOrphanConfirm: "Delete {n} orphan backup group(s) ({size})? Those sessions no longer exist, so they cannot be restored from these backups afterwards.",
+				backupOrphanPartial: "✓ Deleted {n}; {f} group(s) failed (retry available)",
 				residentRefuse: "This session may remain resident in harness memory even when it is not focused (archiving hides it but does not unload it). DSH 0.1.5 exposes no public unload-by-ID API; restart the harness to release it, then delete it again.",
 				sessionBusy: "This session is busy: a move / restore / delete is still in flight. Try again in a moment.",
 				contextStale: "The plugin context went stale (client-side hot reload). Refresh the page (or restart the app) and the features will work again.",
@@ -293,6 +316,7 @@ window.__ModuleLoader__.load({
 				doctorDataHistory: "Move history",
 				doctorDataTasks: "Task records",
 				doctorRecovery: "Recovery records",
+				doctorDataLayout: "Storage layout",
 				doctorWorkspaces: "Workspace paths",
 				repairAllBtn: "Fix all",
 				repairAllDone: "✓ Fixed {n} · skipped {s} · failed {f}",
@@ -312,6 +336,18 @@ window.__ModuleLoader__.load({
 			}
 		};
 		const lang = (navigator.language || "en").toLowerCase().startsWith("zh") ? "zh" : "en";
+		// 词条漂移防护：新增文案只补一种语言时，缺失的那一侧会静默回退成 key
+		//（界面上直接显示 idUnresolved 这样的标识符）。启动时对账一次并告警。
+		(() => {
+			const keysOf = (l) => new Set(Object.keys(STRINGS[l] ?? {}));
+			const zhKeys = keysOf("zh");
+			const enKeys = keysOf("en");
+			const onlyZh = [...zhKeys].filter((k) => !enKeys.has(k));
+			const onlyEn = [...enKeys].filter((k) => !zhKeys.has(k));
+			if (onlyZh.length || onlyEn.length) {
+				console.warn("[workspace-mover] i18n key drift — missing in en:", onlyZh, "missing in zh:", onlyEn);
+			}
+		})();
 		const t = (key, vars) => {
 			let s = STRINGS[lang][key] ?? key;
 			for (const [k, v] of Object.entries(vars ?? {})) s = s.replaceAll(`{${k}}`, String(v));
@@ -510,12 +546,16 @@ window.__ModuleLoader__.load({
 				}
 			}
 
+			/** 弹窗实例计数：为 aria-labelledby 生成稳定且唯一的关联 id。 */
+			let overlaySeq = 0;
+
 			function injectOverlay() {
+				const uid = `wsm-title-${++overlaySeq}`;
 				const overlay = document.createElement("div");
 				overlay.className = "wsm-overlay";
 				overlay.innerHTML = `
-<div class="wsm-card" role="dialog" aria-modal="true">
-  <div class="wsm-title"></div>
+<div class="wsm-card" role="dialog" aria-modal="true" aria-labelledby="${uid}">
+  <div class="wsm-title" id="${uid}"></div>
   <div class="wsm-row"><span class="wsm-label"></span> <b class="wsm-session"></b></div>
   <div class="wsm-row"><span class="wsm-label"></span> <b class="wsm-target"></b></div>
   <div class="wsm-hint"></div>
@@ -532,7 +572,29 @@ window.__ModuleLoader__.load({
 				return overlay;
 			}
 
-			function confirmMove({ sessionId, sessionTitle, workspace, batchCount }) {
+			/**
+			 * 挂载弹窗并补齐可达性：焦点进入弹窗、Tab 在弹窗内循环、
+			 * 背景点击关闭。`onKey` 是各调用方自己的 Escape 处理（用于释放监听器）。
+			 * 必须**先 append 再 focus**——未挂到文档上的元素在浏览器里无法聚焦。
+			 */
+			function openDialog(overlay, close) {
+				overlay.addEventListener("click", (e) => { if (e.target === overlay) close(null); });
+				document.body.appendChild(overlay);
+				const card = overlay.querySelector(".wsm-card");
+				const focusables = [...card.querySelectorAll("button:not(:disabled)")];
+				(focusables.find((b) => b.classList.contains("primary")) ?? focusables[0] ?? card)?.focus?.();
+				overlay.addEventListener("keydown", (e) => {
+					if (e.key !== "Tab" || focusables.length === 0) return;
+					const at = focusables.indexOf(document.activeElement);
+					const next = e.shiftKey
+						? (at <= 0 ? focusables.length - 1 : at - 1)
+						: (at === -1 || at === focusables.length - 1 ? 0 : at + 1);
+					// 自管焦点：避免 Tab 跑到弹窗背后的侧边栏/输入框
+					focusables[next]?.focus?.();
+				});
+			}
+
+			function confirmMove({ sessionId, sessionTitle, workspace, batchCount, unresolvedCount }) {
 				return new Promise((resolve) => {
 					const overlay = injectOverlay();
 					const okBtn = overlay.querySelector(".wsm-ok");
@@ -541,15 +603,26 @@ window.__ModuleLoader__.load({
 						? t("scannedN", { n: batchCount })
 						: (sessionTitle || t("unnamedSession"));
 					overlay.querySelector(".wsm-target").textContent = `${workspace.title}（${workspace.path}）`;
-					overlay.querySelector(".wsm-hint").textContent = batchCount ? t("batchHint", { count: batchCount }) : t("hint");
+					const hint = overlay.querySelector(".wsm-hint");
+					hint.textContent = batchCount ? t("batchHint", { count: batchCount }) : t("hint");
+					// 有行无法识别时必须如实说明——用户点"确认"之前要知道这次只搬走了一部分。
+					if (unresolvedCount > 0) {
+						const warn = document.createElement("div");
+						warn.className = "wsm-hint";
+						warn.textContent = t("idUnresolvedPartial", { n: unresolvedCount });
+						hint.after(warn);
+					}
 					okBtn.textContent = batchCount ? t("batchMove") : t("move");
-					const close = (value) => { overlay.remove(); document.removeEventListener("keydown", onKey); resolve(value); };
-					const onKey = (e) => { if (e.key === "Escape") close(null); };
 					document.addEventListener("keydown", onKey);
-					overlay.addEventListener("click", (e) => { if (e.target === overlay) close(null); });
+					function onKey(e) { if (e.key === "Escape") close(null); }
+					function close(value) {
+						overlay.remove();
+						document.removeEventListener("keydown", onKey);
+						resolve(value);
+					}
 					overlay.querySelector(".wsm-cancel").addEventListener("click", () => close(null));
 					okBtn.addEventListener("click", () => close(true));
-					document.body.appendChild(overlay);
+					openDialog(overlay, close);
 				});
 			}
 
@@ -577,14 +650,17 @@ window.__ModuleLoader__.load({
 					okBtn.disabled = true;
 					const select = overlay.querySelector("select.wsm-select");
 					select.addEventListener("change", () => { okBtn.disabled = !select.value; });
-					const close = (value) => { overlay.remove(); document.removeEventListener("keydown", onKey); resolve(value); };
-					const onKey = (e) => { if (e.key === "Escape") close(null); };
 					document.addEventListener("keydown", onKey);
-					overlay.addEventListener("click", (e) => { if (e.target === overlay) close(null); });
+					function onKey(e) { if (e.key === "Escape") close(null); }
+					function close(value) {
+						overlay.remove();
+						document.removeEventListener("keydown", onKey);
+						resolve(value);
+					}
 					overlay.querySelector(".wsm-cancel").addEventListener("click", () => close(null));
 					okBtn.addEventListener("click", () => close(select.value || null));
-					document.body.appendChild(overlay);
-					select.focus();
+					openDialog(overlay, close);
+					okBtn.focus();
 				});
 			}
 
@@ -612,14 +688,17 @@ window.__ModuleLoader__.load({
 					okBtn.disabled = true;
 					const select = overlay.querySelector("select.wsm-select");
 					select.addEventListener("change", () => { okBtn.disabled = !select.value; });
-					const close = (value) => { overlay.remove(); document.removeEventListener("keydown", onKey); resolve(value); };
-					const onKey = (e) => { if (e.key === "Escape") close(null); };
 					document.addEventListener("keydown", onKey);
-					overlay.addEventListener("click", (e) => { if (e.target === overlay) close(null); });
+					function onKey(e) { if (e.key === "Escape") close(null); }
+					function close(value) {
+						overlay.remove();
+						document.removeEventListener("keydown", onKey);
+						resolve(value);
+					}
 					overlay.querySelector(".wsm-cancel").addEventListener("click", () => close(null));
 					okBtn.addEventListener("click", () => close(select.value || null));
-					document.body.appendChild(overlay);
 					if (select.value) okBtn.disabled = false;
+					openDialog(overlay, close);
 					select.focus();
 				});
 			}
@@ -1028,11 +1107,18 @@ window.__ModuleLoader__.load({
 
 			const purgeOne = async (item) => {
 				if (!window.confirm(t("purgeConfirm", { title: item.title || t("unnamedSession") }))) return;
+				// 彻底删除不可撤销：顺便问一句要不要把该会话的迁移备份也清掉
+				//（这些备份此刻已无还原对象，留着只会变成孤儿字节）。
+				const purgeBackups = item.backupCount > 0
+					? window.confirm(t("purgeBackupsToo", { n: item.backupCount }))
+					: false;
 				setBusy(true);
 				setNote("");
 				try {
-					const res = await call("mover.trash.purge", { sessionId: item.sessionId });
-					setNote(t("purgedMsg", { n: res?.purged ?? 1 }));
+					const res = await call("mover.trash.purge", { sessionId: item.sessionId, purgeBackups });
+					let msg = t("purgedMsg", { n: res?.purged ?? 1 });
+					if ((res?.backupsDeleted ?? 0) > 0) msg += t("purgeBackupsDone", { n: res.backupsDeleted });
+					setNote(msg);
 					await runScan();
 				} catch (err) {
 					failNote(err);
@@ -1108,6 +1194,29 @@ window.__ModuleLoader__.load({
 				} finally {
 					setBusy(false);
 				}
+			};
+
+			/**
+			 * 清理全部孤儿备份组的字节。孤儿 = 会话档案已不存在，这些备份不会被
+			 * 任何操作再引用；逐组调用既有端点，不新增 RPC 面。
+			 */
+			const backupDeleteOrphans = async () => {
+				const orphans = (backupItems ?? []).filter((it) => it.orphan);
+				if (orphans.length === 0) return;
+				if (!window.confirm(t("backupOrphanConfirm", { n: orphans.length, size: fmtBytes(backups?.orphanBytes ?? 0) }))) return;
+				setBusy(true);
+				setNote("");
+				let deleted = 0;
+				let failed = 0;
+				for (const item of orphans) {
+					try {
+						const res = await call("mover.backups.deleteOne", { sessionId: item.sessionId });
+						deleted += res?.deleted ?? 0;
+					} catch { failed++; }
+				}
+				setNote(failed > 0 ? t("backupOrphanPartial", { n: deleted, f: failed }) : t("backupDeletedMsg", { n: deleted }));
+				setBusy(false);
+				await runScan();
 			};
 
 			// 一键修复：可自动修复项（挂错归位 / 未记账补账）逐项处理，只动记账不搬文件
@@ -1202,8 +1311,13 @@ window.__ModuleLoader__.load({
 			const brokenWorkspaces = (audit?.items ?? []).filter((it) => it.status !== "ok");
 			const emptyWorkspaces = workspaces.filter((w) => (w.rawSessionCount ?? 0) === 0);
 			const archivedItems = archived?.items ?? [];
-			const trashItems = trash?.items ?? [];
 			const backupItems = backups?.items ?? [];
+			// 回收站条目补上"该会话还有几份迁移备份"：彻底删除时顺带清理它们。
+			const backupCountById = new Map(backupItems.map((it) => [String(it.sessionId), it.count]));
+			const trashItems = (trash?.items ?? []).map((it) => ({
+				...it,
+				backupCount: backupCountById.get(String(it.sessionId)) ?? 0
+			}));
 			const taskItems = tasks?.items ?? [];
 			// 面板筛选：标题 / 会话 ID / 路径 / 归属分组，命中任一即保留
 			const q = query.trim().toLowerCase();
@@ -1323,6 +1437,10 @@ window.__ModuleLoader__.load({
 						})
 					) : null,
 				archivedItems.length > 0 ? h(Caption, { text: `${t("archivedCaption")} (${capCount(archivedV.length, archivedItems.length)})`, help: t("archivedHelp") }) : null,
+				// 扫描只解析最新 400 条档案，而归档会话通常很旧：大库上这里可能不是全部。
+				archived?.truncated && archivedV.length > 0
+					? h("div", { className: "wsm-note" }, t("archiveTruncated", { parsed: archived.scannedParsed ?? 0, total: archived.scannedTotal ?? 0 }))
+					: null,
 				archivedV.length > 0 ? h("div", { className: "wsm-list" },
 					archivedV.map((it) => h("div", { className: "wsm-item", key: it.sessionId },
 						h("span", { className: "wsm-mono" }, it.title || t("unnamedSession")),
@@ -1387,9 +1505,17 @@ window.__ModuleLoader__.load({
 					})) : h("div", { className: "wsm-note" }, t("historyEmpty"))
 				),
 				backupItems.length > 0 ? h(Caption, { text: `${t("backupsCaption")} (${capCount(backupV.length, backupItems.length)})`, help: t("backupsHelp") }) : null,
+				// 孤儿备份：会话已不存在，这些字节不会被任何操作再引用，只能手动清。
+				backups?.orphanGroups > 0
+					? h("div", { className: "wsm-scanrow" },
+						h("span", { style: { fontSize: "12.5px", color: "var(--dsw-alias-label-secondary,#666)" } },
+							t("backupOrphanSummary", { n: backups.orphanGroups, size: fmtBytes(backups.orphanBytes ?? 0) })),
+						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void backupDeleteOrphans() }, t("backupOrphanCleanup")))
+					: null,
 				backupV.length > 0 ? h("div", { className: "wsm-list" },
 					backupV.map((it) => h("div", { className: "wsm-item", key: it.sessionId },
 						h("span", { className: "wsm-mono" }, it.title || t("unnamedSession")),
+						it.orphan ? h("span", { className: "wsm-badge warn", title: t("backupOrphanHelp") }, t("backupOrphanBadge")) : null,
 						h("span", { className: "wsm-cwd", title: it.cwd ?? "" }, t("backupMeta", { n: it.count, size: fmtBytes(it.totalBytes), range: fmtRange(it) })),
 						h("button", { className: "wsm-btn small primary", disabled: busy, onClick: () => void backupRestore(it) }, t("restoreBtn")),
 						h("button", { className: "wsm-btn small", disabled: busy, onClick: () => void backupDelete(it) }, t("backupDeleteBtn"))
@@ -1441,7 +1567,13 @@ window.__ModuleLoader__.load({
 		// slots：设置页「会话救援」面板需要；未注入时访问 ctx.slots 会被宿主拒绝
 		var inject = ["connection", "slots"];
 
+		// 同一 bundle 被重复装载时（宿主热重载/重组）防止叠加实例。
+		// 前一个实例在 teardown 里把它复位，因此"装载→卸载→再装载"仍能正常工作。
+		let applied = false;
+
 		function apply(ctx) {
+			if (applied) return;
+			applied = true;
 			// 在 apply（上下文必然活跃）时立即捕获 connection 服务实例本身，而不是持有 ctx
 			// 做惰性访问：桌面版会在热重载 / 客户端重组时废弃本插件的旧 fiber，此后
 			// ctx.connection 会抛 "cannot get required service 'connection' in inactive context"
@@ -1458,6 +1590,16 @@ window.__ModuleLoader__.load({
 			};
 			let dragging = null; // {el, els, id, target} —— id/target 在 drop 阶段解析
 			let wsCache = null; // {items, at}
+
+			// 统一登记本插件挂到 document / window 上的监听器与 observer。
+			// 必须成对释放：桌面版热重载会废弃旧 fiber 并重新装载客户端半，
+			// 不释放就会叠加第二份监听器——重复确认框、重复 RPC，
+			// 两份闭包还会互相擦掉对方的多选高亮。
+			const disposers = [];
+			const listen = (type, fn, options) => {
+				document.addEventListener(type, fn, options);
+				disposers.push(() => document.removeEventListener(type, fn, options));
+			};
 
 			ensureStyle();
 
@@ -1480,9 +1622,9 @@ window.__ModuleLoader__.load({
 
 			//#region 插件自建多选（宿主侧边栏没有多选模型）
 			// Ctrl/Cmd+点击加入/移出、Shift+点击组内范围选择；拖动任一选中行 = 整批拖动。
-			// 选中集存行元素（判定同步、零延迟）；会话 id 在点击/投放时经「分组对齐 +
-			// 标题消歧」解析：组内 DOM 行顺序对齐 workspace.sessionIds 顺序，行文本与
-			// mover.scan 的标题贪心匹配——躲开隐藏空白会话造成的纯序错位，失配退化为顺序。
+			// 选中集存行元素（判定同步、零延迟）；会话 id 在点击/投放时解析：
+			// 优先走权威通道 rowSessionId（React fiber 上的 node.id），不可用时退化为
+			// 「组内对齐 + 标题匹配」——且**匹配不上就不猜**，无法确认的行会被跳过并告知用户。
 			let pickBadge = null;
 			const pickedRows = new Set();
 			let lastPickedRow = null;
@@ -1564,35 +1706,48 @@ window.__ModuleLoader__.load({
 			}
 
 			/**
-			 * 把一组会话行对齐到 workspace.sessionIds：两指针顺序消费 + 行文本与
-			 * scan 标题贪心匹配。仅作 rowSessionId 不可用时的兜底（官方隐藏空白/
-			 * 归档会话时可能错位，v0.6.x 的"移错会话"即源于此）。结果缓存进
-			 * row.dataset.wsmId；返回 row→id 映射。
+			 * 把一组会话行对齐到 ws.sessionIds。仅在权威通道（rowSessionId）不可用时使用。
+			 *
+			 * 关键安全约定：**匹配不上就不猜**。旧实现在标题匹配失败时直接取
+			 * `remaining` 里的下一个 id，而官方侧边栏会隐藏空白/归档行，于是整组错位一格、
+			 * 批量拖拽会搬走另一组合法会话。现在无法确定的行一律计入 unresolved，
+			 * 由调用方决定跳过还是中止。
+			 *
+			 * 返回 { map, unresolved }；map 为 row → id。
 			 */
 			async function mapGroupRows(ws, groupRows) {
 				const titleOf = new Map();
 				try {
 					const scan = await fetchScan();
 					for (const it of scan.items ?? []) titleOf.set(String(it.sessionId), String(it.title ?? "").replace(/\s+/g, " ").trim());
-				} catch { /* scan 不可用时退化为纯顺序对齐 */ }
+				} catch { /* scan 不可用时无法按标题匹配，只能精确匹配或放弃 */ }
 				const remaining = (ws.sessionIds ?? []).map(String);
 				const out = new Map();
+				const unresolved = [];
 				for (const row of groupRows) {
-					if (remaining.length === 0) break;
+					if (remaining.length === 0) { unresolved.push(row); continue; }
 					const text = (row.textContent ?? "").replace(/\s+/g, " ").trim();
 					let hit = -1;
 					if (text && text !== t("unnamedSession")) {
-						hit = remaining.findIndex((id) => { const tt = titleOf.get(id); return tt && tt.length > 0 && (tt === text || text.includes(tt) || tt.includes(text)); });
+						// 先精确，再"标题被行文本包含"（行文本通常更短，只带徽章/时间）
+						hit = remaining.findIndex((id) => titleOf.get(id) === text);
+						if (hit < 0) {
+							hit = remaining.findIndex((id) => {
+								const tt = titleOf.get(id);
+								return tt && tt.length > 0 && text.includes(tt);
+							});
+						}
 					}
-					if (hit < 0) hit = 0;
+					if (hit < 0) { unresolved.push(row); continue; }
 					const id = remaining.splice(hit, 1)[0];
+					if (id === undefined) { unresolved.push(row); continue; }
 					row.dataset.wsmId = id;
 					out.set(row, id);
 				}
-				return out;
+				return { map: out, unresolved };
 			}
 
-			/** 解析单个行元素（含所在组）的会话 id；权威走 rowSessionId，失败退回组内对齐。 */
+			/** 解析单个行元素（含所在组）的会话 id；权威走 rowSessionId，失败退回组内对齐（不猜）。 */
 			async function resolveRowId(rowEl) {
 				const authoritative = rowSessionId(rowEl);
 				if (authoritative) return authoritative;
@@ -1607,12 +1762,12 @@ window.__ModuleLoader__.load({
 				if (!header) return null;
 				const ws = resolveWorkspace(header, items);
 				if (!ws) return null;
-				const mapping = await mapGroupRows(ws, groupSessionRows(header));
-				return mapping.get(rowEl) ?? null;
+				const { map } = await mapGroupRows(ws, groupSessionRows(header));
+				return map.get(rowEl) ?? null;
 			}
 
 			// Ctrl/Cmd+点击：加入/移出；Shift+点击：组内范围选择。普通点击不干预。
-			document.addEventListener("click", async (e) => {
+			listen("click", async (e) => {
 			const row = sessionRow(e.target);
 			if (!row) return;
 			const meta = e.ctrlKey || e.metaKey;
@@ -1632,9 +1787,9 @@ window.__ModuleLoader__.load({
 						return null;
 					})();
 					const ws = header ? resolveWorkspace(header, items) : null;
-					if (!ws) return void toast(t("noTarget"), true);
+					if (!ws) return void toast(t("staleList"), true);
 					const groupRows = groupSessionRows(header);
-					const mapping = await mapGroupRows(ws, groupRows);
+					const { map: mapping } = await mapGroupRows(ws, groupRows);
 				if (meta) {
 					if (pickedRows.has(row)) pickedRows.delete(row);
 					else if (mapping.has(row) || rowSessionId(row)) {
@@ -1664,9 +1819,13 @@ window.__ModuleLoader__.load({
 				}
 			}, true);
 
-			// Esc 清空多选；不消费事件，输入框聚焦时也照常清空（官方输入的取消行为不受影响）
-			document.addEventListener("keydown", (e) => {
+			// Esc 清空多选：输入框聚焦时不清空（与 pickHint 的文案一致），
+			// 也不消费事件——官方输入的取消行为不受影响。
+			listen("keydown", (e) => {
 				if (e.key !== "Escape" || pickedRows.size === 0) return;
+				const el = document.activeElement;
+				const tag = el?.tagName?.toLowerCase?.();
+				if (el?.isContentEditable || tag === "input" || tag === "textarea" || tag === "select") return;
 				clearSelection();
 			});
 			//#endregion
@@ -1693,30 +1852,36 @@ window.__ModuleLoader__.load({
 					.filter((el) => el.offsetParent !== null && !isUngroupedHeader(el));
 			}
 
-			function headerIndex(rowEl) {
-				return visibleWorkspaceHeaders().indexOf(rowEl);
+			/** 行标题文本是否命中某个注册表工作区的 title 或 path（大小写不敏感）。 */
+			function headerMatchesWorkspace(text, item) {
+				const lower = String(text ?? "").toLocaleLowerCase();
+				const title = normalizeHeaderText(item?.title).toLocaleLowerCase();
+				const path = normalizeHeaderText(item?.path).toLocaleLowerCase();
+				return Boolean((title && lower.includes(title)) || (path && lower.includes(path)));
 			}
 
+			/**
+			 * 行元素 → 注册表工作区。
+			 * 只用**可自证**的凭据：标题/路径命中，或标题与路径同时为空时的序号等价
+			 * （两者都无值意味着该实体没有可显示的标识，序号是唯一可用信息）。
+			 * 官方侧边栏会隐藏目录已失效的分组，而 registry.list() 仍包含它们——
+			 * 因此「DOM 第 i 项 = 注册表第 i 项」是错的，绝不能作为无条件兜底，
+			 * 否则侧边栏少显示一项就会把会话搬进相邻分组。
+			 */
 			function resolveWorkspace(rowEl, items) {
 				const list = Array.isArray(items) ? items : [];
 				if (!rowEl || isUngroupedHeader(rowEl)) return null;
 				const text = headerText(rowEl);
-				const lowerText = text.toLocaleLowerCase();
-				const byText = list.find((item) => {
-					const title = normalizeHeaderText(item.title);
-					const path = normalizeHeaderText(item.path);
-					return (title && lowerText.includes(title.toLocaleLowerCase()))
-						|| (path && lowerText.includes(path.toLocaleLowerCase()));
-				});
+				const byText = list.find((item) => headerMatchesWorkspace(text, item));
 				if (byText) return byText;
-				const idx = headerIndex(rowEl);
-				const byIndex = idx >= 0 && idx < list.length ? list[idx] : null;
-				return byIndex;
+				const unidentifiable = list.filter((item) => !normalizeHeaderText(item?.title) && !normalizeHeaderText(item?.path));
+				if (unidentifiable.length === 1) return unidentifiable[0];
+				return null;
 			}
 
 			// dragstart：只做「元素判定」——拖起已多选的行 = 整批拖动，否则单选。
 			// id 一律留到 drop 阶段解析（dataTransfer 只携带拖起这一行的 id）。
-			document.addEventListener("dragstart", (e) => {
+			listen("dragstart", (e) => {
 				try {
 					const row = sessionRow(e.target);
 					if (!row) { dragging = null; return; }
@@ -1726,7 +1891,7 @@ window.__ModuleLoader__.load({
 				} catch { dragging = null; }
 			});
 
-			document.addEventListener("dragover", (e) => {
+			listen("dragover", (e) => {
 				clearHints();
 				if (!dragging) return;
 				const header = headerRow(e.target);
@@ -1743,7 +1908,7 @@ window.__ModuleLoader__.load({
 				}
 			}, true);
 
-			document.addEventListener("drop", async (e) => {
+			listen("drop", async (e) => {
 				const current = dragging;
 				dragging = null;
 				clearHints();
@@ -1766,7 +1931,7 @@ window.__ModuleLoader__.load({
 					draggedId = candidates.map((value) => String(value).trim().split(/[\r\n]/)[0]).find(Boolean) || null;
 				} catch { draggedId = null; }
 				if (!draggedId) {
-					return void toast(t("failed", { msg: "unrecognized drag payload: empty" }), true);
+					return void toast(t("failed", { msg: t("dragPayloadBad") }), true);
 				}
 
 				let workspace = null;
@@ -1787,12 +1952,15 @@ window.__ModuleLoader__.load({
 				} catch (err) {
 					return void toast(t("failed", { msg: errMsg(err) }), true);
 				}
-				if (!workspace) return void toast(t("noTarget"), true);
+				if (!workspace) return void toast(t("staleList"), true);
 
 				// ---- 组装移动清单：拖起行必有 id；多选行逐个经分组对齐解析 ----
+				// 解析不出 id 的行**绝不猜测**（见 mapGroupRows 的安全约定）：
+				// 要么整体中止，要么在确认框里如实说明跳过了几行。
 				const picked = (current.els ?? [current.el]).filter((el) => el?.isConnected);
 				const sessions = [];
 				const seen = new Set();
+				let unresolvedCount = 0;
 				const push = (id, title) => {
 					const key = String(id);
 					if (!key || seen.has(key)) return;
@@ -1802,20 +1970,30 @@ window.__ModuleLoader__.load({
 				if (picked.length > 1) {
 					for (const el of picked) {
 						if (el === current.el) continue; // 拖起行用 dataTransfer 的权威 id
-						try { push(await resolveRowId(el), rowTitle(el, "")); } catch { /* 解析失败跳过 */ }
+						try {
+							const id = await resolveRowId(el);
+							if (id) push(id, rowTitle(el, ""));
+							else unresolvedCount += 1;
+						} catch { unresolvedCount += 1; }
 					}
 				}
 				// 权威 id 放首位；若某选中行被误映射到同一 id 会被去重吞掉
+				const beforePush = sessions.length;
 				push(draggedId, rowTitle(current.el, draggedId));
+				if (sessions.length === beforePush) unresolvedCount += 1; // 连拖起行都没解析出来
+
+				if (unresolvedCount > 0 && sessions.length === 0) {
+					return void toast(t("idUnresolved"), true);
+				}
 
 				if (sessions.length > 50) {
-					return void toast(t("failed", { msg: `too many sessions in one batch (max 50, got ${sessions.length})` }), true);
+					return void toast(t("failed", { msg: t("batchTooMany", { max: 50, n: sessions.length }) }), true);
 				}
 
 				// ---- 单选：原有确认与 mover.move 路径 ----
 				if (sessions.length === 1) {
 					const { sessionId, sessionTitle } = sessions[0];
-					const confirmed = await confirmMove({ sessionId, sessionTitle, workspace });
+					const confirmed = await confirmMove({ sessionId, sessionTitle, workspace, unresolvedCount });
 					if (!confirmed) return;
 					try {
 						const res = await rpcCall("mover.move", { sessionId, sessionTitle, targetWorkspaceId: workspace.workspaceId });
@@ -1837,7 +2015,7 @@ window.__ModuleLoader__.load({
 				}
 
 				// ---- 多选：批量确认 + mover.moveMany（逐条独立备份回滚）----
-				const confirmed = await confirmMove({ workspace, batchCount: sessions.length });
+				const confirmed = await confirmMove({ workspace, batchCount: sessions.length, unresolvedCount });
 				if (!confirmed) return;
 				try {
 					const res = await rpcCall("mover.moveMany", { sessions, targetWorkspaceId: workspace.workspaceId });
@@ -1860,7 +2038,7 @@ window.__ModuleLoader__.load({
 				}
 			}, true);
 
-			document.addEventListener("dragend", () => { dragging = null; clearHints(); });
+			listen("dragend", () => { dragging = null; clearHints(); });
 
 			// 整组迁移 + 分组合并：入口在官方组标题的「⋯」菜单（注入「整组迁移…」项）。
 			// 不再拦截浏览器右键——官方菜单同样在右键/⋯按钮打开，拦截会与之冲突。
@@ -1912,7 +2090,7 @@ window.__ModuleLoader__.load({
 			// 记录「⋯」按钮点击所在的标题行（标题行内唯一带 aria-label 的按钮），
 			// 随后出现的菜单 portal 即属于这个分组；1 秒内未出现菜单则作废。
 			let menuHeaderRow = null;
-			document.addEventListener("click", (e) => {
+			listen("click", (e) => {
 				const header = headerRow(e.target);
 				if (!header) return;
 				const btn = e.target.closest?.("button[aria-label]");
@@ -1947,7 +2125,7 @@ window.__ModuleLoader__.load({
 					try {
 						const list = await fetchWorkspaces();
 						const ws = resolveWorkspace(header, list);
-						if (!ws) return void toast(t("noTarget"), true);
+						if (!ws) return void toast(t("staleList"), true);
 						const res = await rpcCall("mover.openFolder", { workspaceId: ws.workspaceId, path: ws.path });
 						if (!res?.ok) toast(t("failed", { msg: res?.error?.message ?? "open failed" }), true);
 					} catch (err) {
@@ -1980,8 +2158,10 @@ window.__ModuleLoader__.load({
 				}
 			});
 			menuObserver.observe(document.body, { childList: true, subtree: true });
+			disposers.push(() => { try { menuObserver.disconnect(); } catch { /* ignore */ } });
 
 			// 诊断句柄：控制台用 window.__wsmDebug 检查「最近更新」排序修复通道（排障用）
+			const priorDebug = window.__wsmDebug;
 			try {
 				window.__wsmDebug = {
 					view: () => { const v = resolveViewStore(ctx); return v ? v.getSnapshot() : null; },
@@ -1994,6 +2174,19 @@ window.__ModuleLoader__.load({
 			} catch { /* ignore */ }
 
 			registerRescuePanel(ctx, rpcCall);
+
+			// teardown：宿主废弃本 fiber（桌面版热重载 / 客户端重组）时释放全部监听器。
+			// 没有这一步，重新装载会叠加第二份监听器，且旧闭包连同 pickedRows /
+			// dragging / 缓存永远不会被回收。
+			if (typeof ctx.effect === "function") {
+				ctx.effect(() => () => {
+					applied = false;
+					for (const dispose of disposers.splice(0)) {
+						try { dispose(); } catch { /* 单个失败不影响其余 */ }
+					}
+					try { if (window.__wsmDebug && priorDebug === undefined) delete window.__wsmDebug; } catch { /* ignore */ }
+				}, "workspace-mover: client listeners");
+			}
 		}
 
 		module.exports = { inject, apply };
