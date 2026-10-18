@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **A conversation that was open when it was moved could not continue in its new workspace** ([#5](https://github.com/PianoPrince/dsh-workspace-mover/issues/5)). The move succeeded and the archive was really in the new project directory, but the next message failed because DSH kept writing to the old `<old-project>/<session>/session.vN.jsonl.zstd` path. Root cause: since DSH 0.1.3 the JSONL backend keeps an open write handle per resident session (`sessionPersistence.tracker.writers`) that derives every append path from its own `header.cwd`; the plugin only cleared the pre-0.1.3 `coordinator.states` cache, which no longer exists, so the handle was never pointed at the new location. Moves, undo, unarchive and the move-home wizard now rebind that handle to the new `cwd` (restored if the move rolls back). On a host where neither channel is recognized, moving a resident session still succeeds but now reports a restart hint instead of silently leaving the writer behind.
+- `mover.status` reports `capabilities.residentWriteChannel`, and `degradedFeatures` lists `resident-hotfix` only when no channel is recognized; it was previously listed on every DSH ≥ 0.1.3 host.
+
+### Validation
+
+- Tests 171 → 188: 17 sandbox cases model the JSONL write handle (appends re-derive the path from `handle.header.cwd`, never `mkdir`) and cover A→B, attach-failure rollback, A→B→A, the move-home wizard, other sessions' handles, an opening (`null`) writer, hosts with no channel, and `mover.status` reporting; 10 of them fail on 2.3.0.
+- Reproduced and verified against the real DSH 0.2.1-rc.2 JSONL backend (Node, macOS): on 2.3.0 the first append after a move fails with `ENOENT` on the old path; with this fix direct and live-routed appends succeed in the new location, the old directory is not recreated, the write lock stays held, and the read-back is complete and contiguous. Covered both freshly created and resumed (`open(id, 'write')`) handles, events buffered at move time, A→B→A, and attach-failure rollback. Not yet verified on Windows or inside the desktop app.
+
 ## [2.3.0] - 2026-10-13
 
 ### Added

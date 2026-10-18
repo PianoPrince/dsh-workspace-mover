@@ -8,7 +8,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync, renameSync, realpathSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { zstdCompressSync, constants } from 'node:zlib';
+import { zstdCompressSync, zstdDecompressSync, constants } from 'node:zlib';
 
 import { apply, scanFrames, readHeader, artifactPath, sessionDir, createPersistenceAdapter, openInFileManager, moveDir, stashBackup, verifyRelocatedArtifact, deleteSessionToTrash, moveSession, SCAN_MAX_ITEMS } from '../lib/index.js';
 
@@ -2605,3 +2605,370 @@ test('Bundle 空间估算包含附件，空间不足时 dry-run 阻断且执行�
     syncBuiltinESMExports();
   }
 });
+
+//#region issue #5：常驻会话的持久化写句柄必须跟随迁移
+// 宿主模型（DSH ≥ 0.1.5 的 JSONL 后端，含 0.2.0-rc.2 / 0.2.1-rc.2）：常驻会话的写句柄登记在
+// sessionPersistence.tracker.writers（Map<id, handle | null>，null = write-open 仍在构造）。
+// 句柄自带一份 header（与 live session 头不是同一对象），之后每次追加都按
+// join(sessionDir(root, handle.header.cwd, id), 档案文件名) 以 'a' 打开，句柄存活期间从不回读
+// 磁盘重新定位——迁移后若 handle.header.cwd 仍指向旧项目，下一条消息就 ENOENT（issue #5 症状）。
+// 本节期望结果全部来自需求 R1–R11，而不是来自实现。
+
+const ISSUE5 = Object.freeze({
+  sessionId: 'session-aaa', // beforeEach 夹具会话
+  bystanderId: 'session-bystander',
+  sourceWorkspaceId: 'wid-a',
+  targetWorkspaceId: 'wid-b',
+  // DSH 0.2.x 当前代际的档案文件名，即 issue #5 报错路径里的那个文件
+  artifactName: 'session.v4.jsonl.zstd',
+  headerVersion: 4,
+  createdAtMs: 1720000000000,
+  agentIdle: 'idle',
+  agentRunning: 'running',
+  busyCode: 'busy',
+  rollbackMessage: /rolled back cleanly/i,
+  degradedResidentHotfix: 'resident-hotfix',
+  renamedFolderSuffix: '-moved'
+});
+
+/** ctx.get 的宿主服务名。 */
+const HOST_SERVICE = Object.freeze({ sessions: 'sessions', agents: 'agents', persistence: 'sessionPersistence' });
+
+/**
+ * 宿主持久化写通道的形态；expected 是 mover.status 应报告的 capabilities.residentWriteChannel。
+ * install 只改本用例 ctx 上的 persistence（beforeEach 每例新建），共享夹具对其他用例不变。
+ * entries 是 writers Map 的初始条目，只有写句柄通道使用。
+ */
+const HOST_CHANNELS = Object.freeze({
+  writerHandle: Object.freeze({
+    label: 'tracker.writers Map',
+    expected: 'writer-handle',
+    install: (persistence, entries) => { persistence.tracker = { writers: new Map(entries) }; }
+  }),
+  coordinator: Object.freeze({
+    label: 'legacy coordinator.states',
+    expected: 'coordinator',
+    install: (persistence) => { persistence.coordinator = { states: new Map() }; }
+  }),
+  none: Object.freeze({
+    label: 'no known write channel',
+    expected: null,
+    install: () => {}
+  })
+});
+
+/** 被迁移会话在 writers Map 里的条目形态（决策表的一个维度）。 */
+const WRITER_ENTRY = Object.freeze({ handle: 'handle', opening: 'opening', absent: 'absent' });
+
+/** zstd 档案的一条记录 = 一个独立压缩的帧（与 makeArtifact、真实后端同格式）。 */
+function encodeFrame(record) {
+  return zstdCompressSync(Buffer.from(JSON.stringify(record) + '\n', 'utf8'), OPTS);
+}
+
+/** 逐帧解码档案。Node 的 zstdDecompressSync 只解第一帧，所以先按 scanFrames 切分。 */
+function readArchiveRecords(path) {
+  const bytes = readFileSync(path);
+  return scanFrames(bytes).map(([start, end]) => JSON.parse(zstdDecompressSync(bytes.subarray(start, end)).toString('utf8')));
+}
+
+/** 某 cwd 下该会话当前代际档案的绝对路径。 */
+function archiveIn(cwd, sessionId = ISSUE5.sessionId) {
+  return join(sessionDir(root, cwd, sessionId), ISSUE5.artifactName);
+}
+
+/** 把档案放成当前代际文件名：夹具已有的 v3 文件原地改名，没有则新建。 */
+function seedCurrentGenerationArchive(sessionId, cwd) {
+  const target = archiveIn(cwd, sessionId);
+  const legacy = artifactPath(root, cwd, sessionId);
+  mkdirSync(dirname(target), { recursive: true });
+  if (existsSync(legacy)) renameSync(legacy, target);
+  else writeFileSync(target, makeArtifact({ type: 'session', id: sessionId, cwd }));
+}
+
+/**
+ * 复刻 JSONL 后端写句柄：追加路径每次都由 this.header.cwd 现算，以 'a' 打开，
+ * 不 mkdir、不回读磁盘。旧目录消失后仍指向旧 cwd 的句柄因此 ENOENT。
+ */
+function makeWriterHandle(meta) {
+  return {
+    id: meta.id,
+    access: 'write',
+    header: structuredClone(meta),
+    append(record) {
+      fs.appendFileSync(join(sessionDir(root, this.header.cwd, this.id), ISSUE5.artifactName), encodeFrame(record), { flag: 'a' });
+    }
+  };
+}
+
+/**
+ * 一个常驻会话在宿主侧的两份状态：live session（冻结头，DSH 官方语义）与写句柄
+ * （同一份 meta 的独立克隆，所以两者 header 不是同一对象）。
+ */
+function makeResident(sessionId, cwd) {
+  const meta = { version: ISSUE5.headerVersion, id: sessionId, createdAt: ISSUE5.createdAtMs, cwd, isSeeded: false, delegationDepth: 0 };
+  seedCurrentGenerationArchive(sessionId, cwd);
+  return { live: { id: sessionId, header: Object.freeze(structuredClone(meta)) }, writer: makeWriterHandle(meta) };
+}
+
+/** 宿主启动时的状态：会话记账在 entity，三张索引里的缓存指向 entity.path。 */
+function accountMember(sessionId, entity) {
+  entity.record.sessionIds.push(sessionId);
+  sharedIndex.headers.set(sessionId, { id: sessionId, cwd: entity.path });
+  sharedIndex.sessionPaths.set(sessionId, entity.path);
+}
+
+/** 同在 A、同样常驻并持有写句柄、但不参与迁移的另一个会话。 */
+function makeBystander() {
+  const bystander = makeResident(ISSUE5.bystanderId, A);
+  accountMember(ISSUE5.bystanderId, entityA);
+  return bystander;
+}
+
+/**
+ * 只为本用例改造 ctx：选定写通道、让 residents 在 ctx.get(sessions) 可见、设定 agent 状态。
+ * 共享夹具的 ctx.get 恒返回 undefined；真实 cordis 宿主里 ctx.get(name) 与 ctx[name] 是同一服务实例，
+ * 所以这里让 ctx.get(sessionPersistence) 返回 ctx.sessionPersistence，无论实现走哪个入口都看到同一个宿主。
+ * @returns 宿主的 writers Map；写句柄通道以外为 undefined。
+ */
+function installHost({ channel, residents = [], writerEntries = [], agentStatus = ISSUE5.agentIdle }) {
+  channel.install(ctx.sessionPersistence, writerEntries);
+  const live = new Map(residents.map((resident) => [resident.live.id, resident.live]));
+  ctx.get = (key) => {
+    if (key === HOST_SERVICE.sessions) return { get: (id) => live.get(String(id)) };
+    if (key === HOST_SERVICE.agents) return { get: () => ({ status: agentStatus }) };
+    if (key === HOST_SERVICE.persistence) return ctx.sessionPersistence;
+    return undefined;
+  };
+  return ctx.sessionPersistence.tracker?.writers;
+}
+
+/** session-aaa 常驻于 A、记账在 A；entry 决定它在 writers Map 中的条目形态。 */
+function setupResident({ channel = HOST_CHANNELS.writerHandle, entry = WRITER_ENTRY.handle, bystanders = [], agentStatus } = {}) {
+  const resident = makeResident(ISSUE5.sessionId, A);
+  accountMember(ISSUE5.sessionId, entityA);
+  const writerEntries = bystanders.map((bystander) => [bystander.live.id, bystander.writer]);
+  if (entry === WRITER_ENTRY.handle) writerEntries.push([ISSUE5.sessionId, resident.writer]);
+  if (entry === WRITER_ENTRY.opening) writerEntries.push([ISSUE5.sessionId, null]);
+  const writers = installHost({ channel, residents: [resident, ...bystanders], writerEntries, agentStatus });
+  return { ...resident, writers };
+}
+
+async function moveFixtureSession(targetWorkspaceId) {
+  return await call('mover.move', { sessionId: ISSUE5.sessionId, targetWorkspaceId });
+}
+
+function omitCwd({ cwd: _cwd, ...rest }) {
+  return rest;
+}
+
+/** restartHint 契约：需要重启时为非空字符串，否则为 null 或缺省。 */
+function assertRestartHint(result, expectHint) {
+  if (expectHint) {
+    assert.equal(typeof result.restartHint, 'string', `restartHint expected: ${JSON.stringify(result)}`);
+    assert.ok(result.restartHint.trim().length > 0, 'restartHint must not be blank');
+  } else {
+    assert.equal(result.restartHint ?? null, null, `no restartHint expected, got: ${result.restartHint}`);
+  }
+}
+
+/** 经句柄追加一条记录，断言它成为 expectedArchive 的最后一帧；返回该记录供顺序断言。 */
+function appendThroughWriter(writer, expectedArchive, step) {
+  const record = { type: 'message', step };
+  writer.append(record);
+  assert.deepEqual(readArchiveRecords(expectedArchive).at(-1), record, `write "${step}" must land in ${expectedArchive}`);
+  return record;
+}
+
+// R1：空闲常驻 + 写句柄，A → B 后句柄头跟随，后续写入落进 B 的档案、旧会话目录不复活、无重启提示
+test('issue #5 R1: idle resident session with a writer handle — later writes land in the moved archive under B', async () => {
+  apply(ctx);
+  const { writer, writers } = setupResident();
+
+  const res = await moveFixtureSession(ISSUE5.targetWorkspaceId);
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.value.moved, true);
+  assert.equal(res.value.verified, true);
+  assertRestartHint(res.value, false);
+  assert.ok(existsSync(archiveIn(B)), 'archive lives under the target session dir');
+  // 宿主 agent loop 持有 open() 返回的那个句柄对象并经它追加：修复必须更新句柄本身，
+  // 换掉 Map 条目会让持有者继续写旧路径。
+  assert.equal(writers.get(ISSUE5.sessionId), writer, 'write ownership is still held by the same handle');
+  assert.equal(writers.get(ISSUE5.sessionId).header.cwd, B);
+
+  appendThroughWriter(writer, archiveIn(B), 'after A→B');
+  assert.equal(verifyRelocatedArtifact(archiveIn(B), ISSUE5.sessionId, B), true, 'move verification still holds after the write');
+  assert.equal(existsSync(sessionDir(root, A, ISSUE5.sessionId)), false, 'old session dir under A is not recreated');
+});
+
+// R2：句柄头除 cwd 外的字段原样保留；live session 头同样指向 B
+test('issue #5 R2: writer header keeps every non-cwd field and the live session header also follows to B', async () => {
+  apply(ctx);
+  const { writer } = setupResident();
+  const fieldsBefore = omitCwd(structuredClone(writer.header));
+
+  const res = await moveFixtureSession(ISSUE5.targetWorkspaceId);
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.deepEqual(omitCwd(writer.header), fieldsBefore);
+  assert.equal(ctx.get(HOST_SERVICE.sessions).get(ISSUE5.sessionId).header.cwd, B);
+});
+
+// R3：目标 attach 失败 → 回滚，档案回到 A，句柄头恢复为原值，后续写入落进原档案
+test('issue #5 R3: target attach failure restores the writer header to A so later writes land in the original archive', async () => {
+  apply(ctx);
+  const { writer, writers } = setupResident();
+  const recordsBefore = readArchiveRecords(archiveIn(A));
+  entityB.failAttach = true;
+
+  const res = await moveFixtureSession(ISSUE5.targetWorkspaceId);
+  assert.equal(res.ok, false);
+  assert.match(res.error.message, ISSUE5.rollbackMessage);
+  assert.ok(existsSync(archiveIn(A)), 'archive restored under A');
+  assert.equal(existsSync(sessionDir(root, B, ISSUE5.sessionId)), false, 'nothing left under B');
+  assert.equal(writers.get(ISSUE5.sessionId).header.cwd, A);
+
+  const record = appendThroughWriter(writer, archiveIn(A), 'after rollback');
+  assert.deepEqual(readArchiveRecords(archiveIn(A)), [...recordsBefore, record], 'original archive intact plus the new write');
+  assert.equal(existsSync(sessionDir(root, B, ISSUE5.sessionId)), false, 'the write did not leak to B');
+});
+
+// R4：非常驻会话（无 live session、无写句柄条目）照旧迁移、无重启提示；写通道存在与否两个等价类
+for (const channel of [HOST_CHANNELS.writerHandle, HOST_CHANNELS.none]) {
+  test(`issue #5 R4: non-resident session moves as before without a restart hint (${channel.label})`, async () => {
+    apply(ctx);
+    accountMember(ISSUE5.sessionId, entityA);
+    const writers = installHost({ channel });
+
+    const res = await moveFixtureSession(ISSUE5.targetWorkspaceId);
+    assert.equal(res.ok, true, JSON.stringify(res));
+    assert.equal(res.value.moved, true);
+    assertRestartHint(res.value, false);
+    const moved = findArtifact(ISSUE5.sessionId);
+    assert.equal(dirname(moved), sessionDir(root, B, ISSUE5.sessionId));
+    assert.equal(readHeader(readFileSync(moved)).cwd, B);
+    if (writers) assert.equal(writers.size, 0, 'no writer entry is invented for a non-resident session');
+  });
+}
+
+// R5 / R6 / R7 决策表：常驻空闲会话的写通道 × 条目形态 → 迁移都成功，只有无法热修时给重启提示
+const ISSUE5_HINT_CASES = [
+  { req: 'R5', label: 'no known write channel', setup: () => setupResident({ channel: HOST_CHANNELS.none }), expectHint: true },
+  { req: 'R6', label: 'writer entry is null (write-open in progress)', setup: () => setupResident({ entry: WRITER_ENTRY.opening }), expectHint: true },
+  // writers Map 非空（有别的会话）但没有本会话条目：常驻却没有写句柄，无需热修
+  { req: 'R7', label: 'resident without a writer entry', setup: () => setupResident({ entry: WRITER_ENTRY.absent, bystanders: [makeBystander()] }), expectHint: false }
+];
+for (const hintCase of ISSUE5_HINT_CASES) {
+  test(`issue #5 ${hintCase.req}: ${hintCase.label} — move succeeds, restart hint ${hintCase.expectHint ? 'present' : 'absent'}`, async () => {
+    apply(ctx);
+    hintCase.setup();
+
+    const res = await moveFixtureSession(ISSUE5.targetWorkspaceId);
+    assert.equal(res.ok, true, JSON.stringify(res));
+    assert.equal(res.value.moved, true);
+    assert.ok(existsSync(archiveIn(B)), 'archive lives under the target session dir');
+    assertRestartHint(res.value, hintCase.expectHint);
+  });
+}
+
+// R8：其他会话的写句柄不受影响（同一句柄、同一 header 对象、cwd 不变、写入仍落在自己的档案）
+test('issue #5 R8: writer handles of other sessions are left untouched', async () => {
+  apply(ctx);
+  const bystander = makeBystander();
+  const { writers } = setupResident({ bystanders: [bystander] });
+  const bystanderHeader = bystander.writer.header;
+
+  const res = await moveFixtureSession(ISSUE5.targetWorkspaceId);
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(writers.get(ISSUE5.bystanderId), bystander.writer);
+  assert.equal(bystander.writer.header, bystanderHeader, 'same header object');
+  assert.equal(bystander.writer.header.cwd, A);
+  appendThroughWriter(bystander.writer, archiveIn(A, ISSUE5.bystanderId), 'bystander after the other session moved');
+});
+
+// 既有契约（R1「空闲」前提的反面）：运行中的常驻会话仍按 busy 拒绝，句柄与档案原样
+test('issue #5: running resident session is still rejected as busy; writer header and archive untouched', async () => {
+  apply(ctx);
+  const { writers } = setupResident({ agentStatus: ISSUE5.agentRunning });
+  const bytesBefore = readFileSync(archiveIn(A));
+
+  const res = await moveFixtureSession(ISSUE5.targetWorkspaceId);
+  assert.equal(res.ok, false);
+  assert.equal(res.error.code, ISSUE5.busyCode, res.error?.message);
+  assert.equal(writers.get(ISSUE5.sessionId).header.cwd, A);
+  assert.deepEqual(readFileSync(archiveIn(A)), bytesBefore);
+});
+
+// R9 状态迁移 A → B → A：每一步句柄头跟随，写入落进当时的档案，最终档案按顺序包含全部写入
+test('issue #5 R9: A → B → A — writer header follows each move and the archive keeps every write in order', async () => {
+  apply(ctx);
+  const { writer, writers } = setupResident();
+  const [, ...initialEvents] = readArchiveRecords(archiveIn(A));
+  const written = [appendThroughWriter(writer, archiveIn(A), 'before any move')];
+  const steps = [
+    { workspaceId: ISSUE5.targetWorkspaceId, to: B, from: A },
+    { workspaceId: ISSUE5.sourceWorkspaceId, to: A, from: B }
+  ];
+
+  for (const step of steps) {
+    const res = await moveFixtureSession(step.workspaceId);
+    assert.equal(res.ok, true, JSON.stringify(res));
+    assertRestartHint(res.value, false);
+    assert.equal(writers.get(ISSUE5.sessionId).header.cwd, step.to);
+    written.push(appendThroughWriter(writer, archiveIn(step.to), `after move to ${step.workspaceId}`));
+    assert.equal(existsSync(sessionDir(root, step.from, ISSUE5.sessionId)), false, `previous session dir ${step.from} not recreated`);
+  }
+
+  const [header, ...events] = readArchiveRecords(archiveIn(A));
+  assert.equal(header.cwd, A);
+  assert.deepEqual(events, [...initialEvents, ...written]);
+});
+
+/** R10 前提：常驻会话所在项目文件夹已被用户改名，然后走搬家向导 mover.repoint。 */
+async function repointResidentWorkspace(channel) {
+  const resident = setupResident({ channel });
+  const renamed = A + ISSUE5.renamedFolderSuffix;
+  renameSync(A, renamed);
+  const res = await call('mover.repoint', { workspaceId: ISSUE5.sourceWorkspaceId, newPath: renamed });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  const item = res.value.moved.find((entry) => entry.sessionId === ISSUE5.sessionId);
+  assert.ok(item, `resident session reported as moved: ${JSON.stringify(res.value)}`);
+  return { ...resident, item, newPath: realpathSync(renamed) };
+}
+
+// R10：搬家向导迁移常驻会话时写句柄头跟随新路径，该条目无重启提示
+test('issue #5 R10: workspace repoint moves the writer header to the new workspace path without a restart hint', async () => {
+  apply(ctx);
+  const { writer, writers, item, newPath } = await repointResidentWorkspace(HOST_CHANNELS.writerHandle);
+  assert.equal(writers.get(ISSUE5.sessionId).header.cwd, newPath);
+  assertRestartHint(item, false);
+  appendThroughWriter(writer, archiveIn(newPath), 'after repoint');
+});
+
+// R10（无写通道，同 R5）：搬家仍完成，但该条目给出非空重启提示
+test('issue #5 R10: workspace repoint on a host without a write channel reports a restart hint for the resident item', async () => {
+  apply(ctx);
+  const { item } = await repointResidentWorkspace(HOST_CHANNELS.none);
+  assertRestartHint(item, true);
+});
+
+// R11：mover.status 报告常驻写通道；只有无通道时列入 resident-hotfix 降级；coordinatorStates 布尔位保留
+const ISSUE5_STATUS_CASES = [
+  { ...HOST_CHANNELS.writerHandle, coordinatorStates: false },
+  { ...HOST_CHANNELS.coordinator, coordinatorStates: true },
+  { ...HOST_CHANNELS.none, coordinatorStates: false },
+  // 边界：有 tracker 但 writers 不是 Map，不能当作写句柄通道
+  { label: 'tracker.writers is not a Map', expected: null, install: (persistence) => { persistence.tracker = { writers: {} }; }, coordinatorStates: false }
+];
+for (const statusCase of ISSUE5_STATUS_CASES) {
+  test(`issue #5 R11: mover.status residentWriteChannel=${statusCase.expected} for ${statusCase.label}`, async () => {
+    apply(ctx);
+    installHost({ channel: statusCase });
+
+    const res = await call('mover.status');
+    assert.equal(res.ok, true, JSON.stringify(res));
+    assert.equal(res.value.capabilities.residentWriteChannel, statusCase.expected);
+    assert.equal(res.value.capabilities.coordinatorStates, statusCase.coordinatorStates);
+    assert.equal(res.value.degradedFeatures.includes(ISSUE5.degradedResidentHotfix), statusCase.expected === null,
+      `degradedFeatures: ${JSON.stringify(res.value.degradedFeatures)}`);
+  });
+}
+//#endregion

@@ -32,7 +32,7 @@ Single logical channel `/workspace-mover` via `ctx.connection.rpc.handle('/works
 
 | Endpoint | Purpose |
 | --- | --- |
-| `mover.status` | Capability report (detected services / degraded items) plus `storageLayout`, `degradedFeatures`, and the `unarchiveApi` / `setTitleApi` flags |
+| `mover.status` | Capability report (detected services / degraded items) plus `storageLayout`, `degradedFeatures`, the `unarchiveApi` / `setTitleApi` flags, and `residentWriteChannel` (`writer-handle` / `coordinator` / `null`; `null` adds `resident-hotfix` to `degradedFeatures`) |
 | `mover.workspaces` | List workspaces |
 | `mover.move` | Single-session true move |
 | `mover.preview` | Read-only migration preview: source/target, collision, running state, adapter and estimated new snapshot bytes; `backup.reused` identifies an existing matching snapshot |
@@ -132,7 +132,7 @@ Order of operations for a cross-workspace move:
 4. **Preflight** — dual-accounting detect, target writability probe, disk-space hint.
 5. **Rewrite first frame** (header cwd) only.
 6. **Move directory** (Windows: exponential-backoff retry on EPERM; fallback copy+delete).
-7. **In-memory closeout** — invalidate three registry indexes; for resident sessions clear stale persistence-coordinator write state; retarget live header `cwd` before official `attachSession`.
+7. **In-memory closeout** — invalidate three registry indexes; rebind the persistence write side to the new location; retarget live header `cwd` before official `attachSession`. The JSONL backend's open write handle (`sessionPersistence.tracker.writers.get(id)`, DSH ≥ 0.1.3) recomputes every append path from its own `header.cwd` and never re-resolves the artifact while open, so its header is replaced with a copy carrying the new `cwd` (restored on rollback); without this, the next message in a resident session fails against the vanished old directory (issue #5). DSH ≤ 0.1.2 instead drops `coordinator.states[id]`. When neither channel is recognized and the session is resident, the move still succeeds but returns a `restartHint`.
 8. **Accounting** — source `detachSession` then target `attachSession`.
 9. **Verify** — read archive back; id + cwd must match or the move fails.
 10. **Rollback on any failure** — restore live header + index snapshot → original bytes back to source dir → reattach source workspace.
