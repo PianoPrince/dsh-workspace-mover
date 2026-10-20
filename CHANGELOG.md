@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Drag autoscroll in the sidebar.** With many workspaces, dragging a session toward a target workspace that sits outside the viewport previously could not reach it — the sidebar never scrolled. The client now auto-scrolls the nearest scrollable sidebar ancestor while the pointer rests near its top or bottom edge during a drag, and stops on drop/dragend. It locates the scroller structurally (nearest `overflow-y: auto/scroll` ancestor with overflow), not by CSS-module class, matching the plugin's existing ARIA-based row/header lookup; it adds no new document-level listener. Verified on DSH 0.2.1-rc.2 desktop with 17 workspaces (`node --check` clean).
+
 ## [2.3.0] - 2026-10-13
 
 ### Added

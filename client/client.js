@@ -1862,6 +1862,44 @@ window.__ModuleLoader__.load({
 			};
 			let dragging = null; // {el, els, id, target} —— id/target 在 drop 阶段解析
 			let wsCache = null; // {items, at}
+			// —— drag autoscroll：工作区列表长时，拖到视口外的目标工作区，指针靠近滚动容器边缘即持续滚动 ——
+			let autoscrollRaf = null;
+			let autoscrollState = null; // { scroller, clientY }
+			/** 从 el 向上找最近的可纵向滚动的祖先（侧栏滚动区），不依赖具体 class，与行定位的 ARIA 策略一致。 */
+			function findScrollableAncestor(el) {
+				let node = el && el.parentElement;
+				while (node) {
+					try {
+						const oy = getComputedStyle(node).overflowY;
+						if ((oy === "auto" || oy === "scroll") && node.scrollHeight > node.clientHeight + 1) return node;
+					} catch { /* getComputedStyle 不可用时跳过 */ }
+					node = node.parentElement;
+				}
+				return null;
+			}
+			/** 停止 autoscroll raf 并清空状态。 */
+			function stopAutoscroll() {
+				if (autoscrollRaf) { cancelAnimationFrame(autoscrollRaf); autoscrollRaf = null; }
+				autoscrollState = null;
+			}
+			/** 每次 dragover 调用：更新指针 Y + 滚动容器；靠近边缘则 raf 持续滚动，离开边缘则停。 */
+			function startAutoscroll(scroller, clientY) {
+				if (!scroller) return stopAutoscroll();
+				autoscrollState = { scroller, clientY };
+				if (autoscrollRaf) return; // 已在跑：tick 读最新 autoscrollState
+				const tick = () => {
+					if (!dragging || !autoscrollState) { stopAutoscroll(); return; }
+					const sc = autoscrollState.scroller;
+					const r = sc.getBoundingClientRect();
+					const EDGE = 64, STEP = 12;
+					let delta = 0;
+					if (autoscrollState.clientY < r.top + EDGE) delta = -STEP;
+					else if (autoscrollState.clientY > r.bottom - EDGE) delta = STEP;
+					if (delta) { sc.scrollTop += delta; autoscrollRaf = requestAnimationFrame(tick); }
+					else { autoscrollRaf = null; } // 不在边缘：停 raf，下次 dragover 再启
+				};
+				autoscrollRaf = requestAnimationFrame(tick);
+			}
 
 			// 统一登记本插件挂到 document / window 上的监听器与 observer。
 			// 必须成对释放：桌面版热重载会废弃旧 fiber 并重新装载客户端半，
@@ -2195,6 +2233,8 @@ window.__ModuleLoader__.load({
 			listen("dragover", (e) => {
 				clearHints();
 				if (!dragging) return;
+				// autoscroll：指针靠近侧栏滚动容器上下边缘时持续滚动，让远处目标工作区进入视口
+				startAutoscroll(findScrollableAncestor(dragging.el), e.clientY);
 				const header = headerRow(e.target);
 				if (!header || isUngroupedHeader(header)) { dragging.target = null; return; }
 				e.preventDefault(); // 允许在此投放（没有它 drop 根本不会触发）
@@ -2212,6 +2252,7 @@ window.__ModuleLoader__.load({
 			listen("drop", async (e) => {
 				const current = dragging;
 				dragging = null;
+				stopAutoscroll();
 				clearHints();
 				if (!current) return;
 				const header = headerRow(e.target);
@@ -2377,7 +2418,7 @@ window.__ModuleLoader__.load({
 				}
 			}, true);
 
-			listen("dragend", () => { dragging = null; clearHints(); });
+			listen("dragend", () => { dragging = null; stopAutoscroll(); clearHints(); });
 
 			// 整组迁移 + 分组合并：入口在官方组标题的「⋯」菜单（注入「整组迁移…」项）。
 			// 不再拦截浏览器右键——官方菜单同样在右键/⋯按钮打开，拦截会与之冲突。
