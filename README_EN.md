@@ -1,5 +1,7 @@
 # dsh-workspace-mover
 
+
+Running or resident sessions wait in the durable queue. Idle alone does not release a backend writer; unload the session or restart DSH before migration. Migration sets the current working directory to the target workspace, preserving existing directory-change events and appending a final change when needed. See the [validation record](docs/compatibility/dsh-0.2.1-rc.2-2026-10-18.md).
 > [!IMPORTANT]
 > Unofficial project, independently developed and maintained by community members.
 
@@ -65,7 +67,7 @@ DeepSeek Harness's sidebar supports drag-to-reorder **within** a workspace, but 
 - **⏳ Busy-session queue**: running sessions are never touched; queued work is persistent, with per-item cancel/retry and batch retry for failed items
 - **🔎 Migration preview**: before confirmation, show source, target path, collisions, running state, adapter mode, and estimated new backup bytes; reuse is called out when a matching snapshot already exists
 - **📂 Empty-group cleanup / open folder**: only truly empty workspaces are listed; open a group directory in your file manager
-- **🤖 Agent tools**: four model-callable tools — `mover_list_sessions` / `mover_move_session` / `mover_repair_sessions` / `mover_doctor` — so "move this session to group X" in the conversation runs the same backup-first pipeline as the panel; mutating tools ask for user approval first, and hosts without `dsh-tools` skip them automatically
+- **🤖 Agent tools**: six model-callable tools — `mover_list_sessions` / `mover_move_session` / `mover_repair_sessions` / `mover_doctor` / `mover_create_workspace` / `mover_rename_workspace` — so "move this session to group X" in the conversation runs the same backup-first pipeline as the panel, and workspaces can be created and renamed too; move, repair and rename ask for user approval first (rename skips it under full access), and hosts without `dsh-tools` skip them automatically
 
 ## 🚀 Install
 
@@ -177,10 +179,14 @@ Mid-turn sessions are rejected; failed moves roll back automatically.
 
 ### Conversational moves (agent tools)
 
-1. Hosts with `dsh-tools` (web and desktop by default) register four model tools: listing and doctor (both read-only), move, and one-click repair;
-2. Say "list my sessions", "move session X to group Y", "run a repair", or "run a self-check" — the model resolves names into exact ids with the listing tool first, then acts;
-3. Mutating tools raise a host approval prompt before acting (same level as the panel confirm); dismissing or denying means nothing happens; the two read-only tools never prompt;
-4. Hosts without `dsh-tools` skip the tools automatically — the panel and drag flows are unaffected.
+Operations requiring approval are refused when the approval service is absent; use the rescue panel in settings instead.
+
+1. Hosts with `dsh-tools` (web and desktop by default) register six model tools: listing and doctor (both read-only), move, one-click repair, create workspace, and rename workspace;
+2. Say "list my sessions", "move session X to group Y", "run a repair", "run a self-check", "create a workspace called Z for folder /path", or "rename group Y to Z" — the model resolves names into exact ids with the listing tool first, then acts;
+3. Move and repair tools raise a host approval prompt before acting (same level as the panel confirm); dismissing or denying means nothing happens; the two read-only tools never prompt;
+4. **Create workspace** registers an existing folder under a new name. It is refused if another workspace already uses that folder (including a symlink to it) or that name, and it never creates folders on disk. It does not ask for approval;
+5. **Rename workspace** changes only the display name and asks for approval first. Sessions with **full access** (`danger-full-access`) rename without asking. A name another workspace already uses is refused;
+6. Hosts without `dsh-tools` skip the tools automatically — the panel and drag flows are unaffected.
 
 ### Bulk move
 
@@ -231,6 +237,7 @@ Recovery snapshots are separate from primary archives. A reused snapshot retains
 
 | Plugin version | Verified DeepSeek Harness | Node | Notes |
 |----------------|---------------------------|------|-------|
+| 2.4.0 | `0.2.1-rc.2` Desktop | `≥22` | User accepted queueing, continued replies, two restarts, target cwd and workspace-tool approval; autoscroll automated checks only |
 | 2.3.0 | `0.2.0-rc.2` Desktop (partial user verification) | `≥22` | Idle migration and snapshot reuse confirmed; Web, queue process restart, and full runtime smoke pending |
 | 2.2.0 | `0.1.5-rc.1`, `0.1.5-rc.2`, **`0.2.0 desktop`** (0.2.0-rc.2 core) | `≥22` | Storage-layout check; Agent tools + desktop verified; tools auto-skip on hosts without `dsh-tools` |
 | 2.0.3 | `0.1.5-rc.1`, `0.1.5-rc.2` | `≥22` | True move / bulk / rescue / recycle bin / backups; first npm publish |

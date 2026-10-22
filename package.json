@@ -1,6 +1,6 @@
 {
   "name": "dsh-workspace-mover",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "在 DSH 侧边栏安全迁移会话：真迁移原始档案，支持失联会话恢复、移动历史、一键撤回和 agent 工具。",
   "type": "module",
   "main": "lib/index.js",
@@ -22,7 +22,8 @@
     "docs/media",
     "LICENSE"
   ],  "scripts": {
-    "test": "node --test test/core.test.mjs test/e2e-sandbox.test.mjs test/policy.test.mjs test/client-dom.test.mjs test/traffic-badge.test.mjs test/release-downloads.test.mjs",
+    "test": "node --test test/core.test.mjs test/e2e-sandbox.test.mjs test/policy.test.mjs test/client-dom.test.mjs test/traffic-badge.test.mjs test/release-downloads.test.mjs test/workspace-tools.test.mjs test/host-services.test.mjs",
+    "test:installed-host": "node --test test/installed-host.test.mjs",
     "check:syntax": "node --check lib/index.js && node --check client/client.js",
     "check:pack": "npm pack --dry-run",
     "check": "npm run check:syntax && npm test && npm run check:pack"

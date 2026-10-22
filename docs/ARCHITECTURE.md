@@ -43,6 +43,8 @@ Single logical channel `/workspace-mover` via `ctx.connection.rpc.handle('/works
 | `mover.history` | Recent moves (≤ `historyLimit`, default 100) |
 | `mover.undo` | Undo one history entry |
 | `mover.ws.audit` | Workspace path health |
+| `mover.ws.create` | Register a new workspace (`name`, `directory`) over an existing folder; `conflict` when the name or the folder is already in use |
+| `mover.ws.rename` | Rename one workspace (`workspaceId`, `name`, optional `dryRun`); display title only, `conflict` on a name another workspace holds |
 | `mover.repoint` | Move-home wizard |
 | `mover.archived` / `mover.unarchive` | List / restore archived sessions (`mover.archived` also reports `truncated` / `scannedParsed` / `scannedTotal` / `archivedTotal`) |
 | `mover.openFolder` | Open group directory in OS file manager |
@@ -92,7 +94,7 @@ Errors carry stable codes (`busy`, `conflict`, `not-found`, `rollback-failed`, �
 
 ## Agent tools (DSH ≥ 0.1.5 with `dsh-tools`)
 
-When the host provides the `tools` service, `apply()` registers four plain (zero-dependency) tool definitions; each tool's execute re-enters the internal RPC dispatch, so agent calls share the panel's locks, error codes, and transaction semantics:
+When the host provides the `tools` service, `apply()` registers six plain (zero-dependency) tool definitions; each tool's execute re-enters the internal RPC dispatch, so agent calls share the panel's locks, error codes, and transaction semantics:
 
 | Tool | Gate | Purpose |
 | --- | --- | --- |
@@ -100,10 +102,16 @@ When the host provides the `tools` service, `apply()` registers four plain (zero
 | `mover_move_session` | user approval | Move one session (`sessionId`, `targetWorkspaceId`, optional `sessionTitle`) |
 | `mover_repair_sessions` | user approval | One `mover.repairAll` pass (accounting-only) |
 | `mover_doctor` | none (read-only) | One `mover.doctor` self-check pass (host services, data dirs, recovery records, workspace paths) |
+| `mover_create_workspace` | none | Register a workspace (`name`, `directory`) through `mover.ws.create` |
+| `mover_rename_workspace` | user approval unless full access | Rename a workspace (`workspaceId`, `name`) through `mover.ws.rename` |
 
-- Mutating tools call `ctx.approval.request({ agent, toolName, reason, signal })` before acting; `allowed-once` proceeds, anything else (`denied` / `cancelled` / `unavailable`) or a throwing seam fails closed. Hosts without the approval seam (no UI) rely on conversational confirmation and proceed.
+- Mutating tools call `approval.request({ agent, toolName, callId, reason, signal })` before acting; `allowed-once` proceeds, anything else (`denied` / `cancelled` / `unavailable`) or a throwing seam fails closed. Hosts without an approval seam refuse operations requiring approval and direct the user to the rescue panel. `callId` is the tool call's own id. The ACP answerer delegates any request without one, so ACP sessions could never approve before it was passed, and the Web prompt uses it to attach to the tool call it already shows.
+- `mover_rename_workspace` skips the prompt when the calling session's effective sandbox mode, read from `ctx.sandboxPolicy.resolve({ session })`, is `danger-full-access` — the same test the official `plugin_manager` tool uses. The bypass is required, not only convenient: the shipped `danger-full-access` preset pairs that mode with approval policy `never`, under which every request resolves `rejected`. A missing policy service or a throwing `resolve` counts as *not* full access, so the tool asks. The tool validates through `dryRun` first, so an unknown id, a blank name, or a name conflict fails before the user is asked; renaming to the current title is a no-op that never prompts. The commit re-validates inside the serialized naming queue, so a conflict created while the prompt was open is still rejected. `mover_doctor` reports whether full-access detection is available under `host-sandbox-policy`.
+- `mover_create_workspace` is ungated because it only adds a registry entry for an existing folder: it never creates folders or files, and a directory already used by a workspace is rejected. "Same folder" uses the host's own identity. The official `registry.create()` canonicalizes with `realpath` and returns the *existing* entity for an owned path, so a trailing slash, `..`, or a symlink alias counts as the same folder. The plugin treats "returned an entity that existed before the call" as `conflict` instead of re-implementing path comparison.
+- Workspace names must be unique (exact match after trimming) for both create and rename. The host registry allows duplicate titles, but the official rename dialog refuses them; the plugin applies that rule to both tools. Check and write run in one serialized queue so two calls cannot claim the same name.
 - `exec.signal` propagates into the RPC layer; cancellation lets the in-flight step finish rolling back to a consistent state.
 - Hosts without `dsh-tools` skip registration silently; `mover.status` reports the `agentTools` flag.
+- **Only `workspaceRegistry` and `sessionPersistence` are in `inject`.** Cordis treats every `inject` entry as required: a missing one leaves the whole plugin fiber inactive, which removes the rescue panel's RPC channel along with every tool. `tools` and `approval` were listed until 2.3.x, so a host without `dsh-user-approval` lost the plugin entirely, and the old missing-approval branch could never run. Now the tools register inside a nested `ctx.inject(['tools'], …)`, so they appear and disappear with `dsh-tools` and the `agentTools` flag follows. Missing approval now blocks operations that require confirmation. The approval service is read with `ctx.get('approval')` on each call, so installing or removing `dsh-user-approval` takes effect without re-mounting the plugin.
 
 ## Session archives and storage adapter
 
@@ -126,18 +134,18 @@ Portable Bundles contain `manifest.json`, `sessions/`, `attachments/`, `checksum
 
 Order of operations for a cross-workspace move:
 
-1. **Running check** — reject only mid-turn sessions (`agents.get(id)?.status === 'running'`); idle resident sessions may move.
+1. **Running check** — queue running or resident sessions; a resident backend writer cannot be safely rebound through the current public API. Await backend `flush()` when available, then recheck residency before reading the archive.
 2. **Read authority header** from disk; verify target ≠ source.
 3. **Recovery snapshot** to `$DSH_HOME/workspace-mover/backups/` (up to `backupKeep` distinct physical files per session, default 20) **before any side effect**. The content fingerprint ignores the migration-only header `cwd`, so a move back and forth reuses the existing snapshot. A backup failure aborts with `backup-failed` and nothing has been touched.
 4. **Preflight** — dual-accounting detect, target writability probe, disk-space hint.
-5. **Rewrite first frame** (header cwd) only.
+5. **Rewrite header cwd**; if an existing `working-directory/change` would override it, append a new event with the next contiguous sequence number. Preserve original events. Reject unsupported generations or invalid sequences before detach.
 6. **Move directory** (Windows: exponential-backoff retry on EPERM; fallback copy+delete).
-7. **In-memory closeout** — invalidate three registry indexes; for resident sessions clear stale persistence-coordinator write state; retarget live header `cwd` before official `attachSession`.
+7. **In-memory closeout** — invalidate three registry indexes before official `attachSession`; never change private writer state or live session headers. Clear the cached `workingDirectory` row so it rebuilds from the migrated log.
 8. **Accounting** — source `detachSession` then target `attachSession`.
 9. **Verify** — read archive back; id + cwd must match or the move fails.
-10. **Rollback on any failure** — restore live header + index snapshot → original bytes back to source dir → reattach source workspace.
+10. **Rollback on any failure** — restore original bytes back to source dir and reattach the source workspace.
 
-Concurrency: same session / same target workspace try-acquire a lock. A running session returns `busy` to the transaction layer and is persisted in `migrations.json` as `waiting-for-idle`; the queue wakes every few seconds and on the next plugin start. Bulk moves de-duplicate first and isolate each result.
+Concurrency: same session / same target workspace try-acquire a lock. A running or resident session returns `busy` to the transaction layer and is persisted in `migrations.json` as `waiting-for-idle`; the queue wakes every few seconds and on the next plugin start. Idle alone does not release a resident writer: wait for unloading or restart. Workspace repoint checks residency before changing the workspace path. Bulk moves de-duplicate first and isolate each result.
 
 If “rollback also failed”, a durable recovery record is written and shown as a red manual-recovery row. Session files and backups stay in place — never auto-deleted.
 
@@ -212,3 +220,5 @@ Version-sensitive host behaviors degrade with explicit UI messages (not silent f
 - User install/usage: [README.md](../README.md), [README_EN.md](../README_EN.md)
 - Full version history: [CHANGELOG.md](../CHANGELOG.md)
 - Security policy: [SECURITY.md](../SECURITY.md)
+
+Backup restore derives the filename generation from the official header `version` (legacy headers without a generation use `session.jsonl`); it never defaults v4 content to a v3 filename. Portable Bundle manifests read the plugin version from `package.json`.

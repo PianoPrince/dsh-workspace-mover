@@ -100,6 +100,7 @@ function createElement(tag) {
     tagName: String(tag).toUpperCase(),
     childNodes: [],
     parentNode: null,
+    get parentElement() { return this.parentNode?.nodeType === 1 ? this.parentNode : null; },
     className: '',
     id: '',
     style: {},
@@ -297,12 +298,26 @@ const reactShim = {
 
 let mod = null;
 const rpcCalls = [];
+const animationFrames = new Map();
+let animationFrameId = 0;
+function frame() {
+  const pending = [...animationFrames.values()];
+  animationFrames.clear();
+  for (const callback of pending) callback();
+}
 let rpcResponder = () => ({ ok: true, value: {} });
 
 function setResponder(fn) { rpcResponder = fn; }
 
 before(async () => {
   globalThis.document = doc;
+  globalThis.getComputedStyle = (el) => ({ overflowY: el.style.overflowY ?? 'visible' });
+  globalThis.requestAnimationFrame = (callback) => {
+    const id = ++animationFrameId;
+    animationFrames.set(id, callback);
+    return id;
+  };
+  globalThis.cancelAnimationFrame = (id) => animationFrames.delete(id);
   globalThis.MutationObserver = MutationObserverStub;
   globalThis.Node = { ELEMENT_NODE: 1 };
   globalThis.Element = function Element() {};
@@ -371,6 +386,7 @@ function unmount() {
 
 function resetDom() {
   unmount();
+  animationFrames.clear();
   doc._body.childNodes = [];
   doc._listeners = [];
   rpcCalls.length = 0;
@@ -498,6 +514,44 @@ test('未卸载就重复装载时不得叠加第二份监听器（防重复实�
     `重复 apply 不得叠加：${afterFirst} -> ${doc._listeners.length}`);
 });
 
+test('drag autoscroll stops outside sidebar, at bounds, on dragleave/drop/dragend and unload', () => {
+  resetDom();
+  mount();
+  const row = sessionRow('Scroll test', 'session-aaa');
+  const scroller = createElement('div');
+  scroller.style.overflowY = 'auto';
+  Object.assign(scroller, { scrollHeight: 1000, clientHeight: 300, scrollTop: 100,
+    getBoundingClientRect: () => ({ left: 0, right: 200, top: 0, bottom: 300 }) });
+  scroller.appendChild(row);
+  attach(scroller);
+  const start = (x = 100, y = 290) => {
+    dispatch({ type: 'dragstart', target: row });
+    dispatch({ type: 'dragover', target: row, clientX: x, clientY: y });
+  };
+  start(); frame();
+  assert.equal(scroller.scrollTop, 112);
+  dispatch({ type: 'dragover', target: row, clientX: 400, clientY: 290 });
+  frame();
+  assert.equal(scroller.scrollTop, 112);
+  assert.equal(animationFrames.size, 0);
+  start(100, 150); frame();
+  assert.equal(animationFrames.size, 0, 'center does not scroll');
+  scroller.scrollTop = 700;
+  start(); frame();
+  assert.equal(animationFrames.size, 0, 'bottom boundary stops frames');
+  scroller.scrollTop = 0;
+  start(100, 5); frame();
+  assert.equal(animationFrames.size, 0, 'top boundary stops frames');
+  scroller.scrollTop = 100;
+  for (const type of ['dragleave', 'drop', 'dragend']) {
+    start();
+    dispatch({ type, target: doc._body, relatedTarget: null });
+    assert.equal(animationFrames.size, 0, `${type} cancels pending frames`);
+  }
+  start(); unmount();
+  assert.equal(animationFrames.size, 0, 'hot unload cancels frames');
+});
+
 test('拖拽跨组移动：经权威 fiber 通道解析出正确 sessionId', async () => {
   resetDom();
   mount();
@@ -510,6 +564,31 @@ test('拖拽跨组移动：经权威 fiber 通道解析出正确 sessionId', asy
   assert.equal(calls.length, 1, '应当恰好发起一次移动');
   assert.equal(calls[0].payload.sessionId, 'session-aaa');
   assert.equal(calls[0].payload.targetWorkspaceId, 'wid-b');
+});
+
+test('迁移标题使用权威预览，不包含侧边栏时间；驻留队列提示可能需重启', async () => {
+  resetDom();
+  mount();
+  const row = sessionRow('测试刚刚', 'session-aaa');
+  const beta = header('proj-beta');
+  fixture({ rows: [row] });
+  const prior = rpcResponder;
+  setResponder((endpoint, payload) => endpoint === 'mover.preview' ? {
+    ok: true, value: {
+      title: '测试', status: 'queued', source: { cwd: 'C:/proj-alpha' },
+      target: { path: 'C:/proj-beta' }, estimatedBackupBytes: 0,
+      warnings: ['resident writer; restart required']
+    }
+  } : prior(endpoint, payload));
+  attach(beta);
+  await dragDrop(row, beta, 'session-aaa', { confirm: false });
+  const overlay = doc._body.querySelector('.wsm-overlay');
+  assert.equal(overlay.querySelector('.wsm-session').textContent, '测试');
+  assert.match(overlay.querySelector('.wsm-preview').textContent, /可能需重启/);
+  assert.doesNotMatch(overlay.querySelector('.wsm-preview').textContent, /进入空闲队列/);
+  dispatch({ type: 'click', target: overlay.querySelector('.wsm-ok') });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(moveCalls()[0].payload.sessionTitle, '测试');
 });
 
 test('兜底映射错配时不得把错配 id 当成真实会话移动（P2 回归）', async () => {

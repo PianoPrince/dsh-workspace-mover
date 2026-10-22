@@ -174,15 +174,15 @@ window.__ModuleLoader__.load({
 				tasksCaption: "迁移任务",
 				tasksHelp: "批量迁移的持久化记录：完成 / 失败逐项可查。失败项可一键重试——按会话当前位置重新迁移，不会用记录里的旧路径；清除记录不影响已迁移的会话。",
 				queueCaption: "等待迁移",
-				queueHelp: "运行中的会话不会触碰文件；会话空闲后自动尝试，失败项可以重试或取消。",
+				queueHelp: "运行中或仍驻留内存的会话暂不移动。停止生成后，若仍驻留，需等待会话卸载或重启；队列随后自动重试，失败项可重试或取消。",
 				queueRetryBtn: "重试",
 				queueRetryAllBtn: "重试全部失败项",
 				queueCancelBtn: "取消",
 				queueRetryDone: "✓ 已重新尝试迁移",
 				queueRetryAllDone: "✓ 已逐项重试 {n} 个失败任务",
 				queueCancelled: "✓ 已取消迁移任务",
-				queuedMove: "已排队：会话空闲后自动迁移",
-				batchQueuedTail: "；{n} 个会话已排队等待空闲",
+				queuedMove: "已排队：等待会话停止运行并释放驻留写入句柄；可能需要重启 DSH",
+				batchQueuedTail: "；{n} 个会话已排队等待安全迁移",
 				previewStatus: "预览状态",
 				previewSource: "来源",
 				previewTarget: "目标路径",
@@ -203,7 +203,7 @@ window.__ModuleLoader__.load({
 				forkHint: "默认只迁移当前会话；选择后代分支会逐项迁移并独立记录结果。",
 				previewWarning: "提示",
 				previewSafe: "可安全移动",
-				previewQueued: "会进入空闲队列",
+				previewQueued: "会进入迁移等待队列（可能需重启）",
 				previewBlocked: "当前不可移动",
 				previewWarningState: "需要确认",
 				taskRetryBtn: "重试失败项",
@@ -374,15 +374,15 @@ window.__ModuleLoader__.load({
 				tasksCaption: "Move tasks",
 				tasksHelp: "Persistent records of bulk moves: every done / failed item is inspectable. Failed items can be retried in one click — retried from where each session currently lives, never from a stale recorded path; clearing a record never touches moved sessions.",
 				queueCaption: "Waiting migrations",
-				queueHelp: "Running sessions are never touched. The migration is retried automatically after the session becomes idle; failed items can be retried or cancelled.",
+				queueHelp: "Running or resident sessions wait. Once generation stops, a resident writer still needs session unloading or a DSH restart. The queue then retries automatically; failed items can be retried or cancelled.",
 				queueRetryBtn: "Retry",
 				queueRetryAllBtn: "Retry all failed",
 				queueCancelBtn: "Cancel",
 				queueRetryDone: "✓ Migration retried",
 				queueRetryAllDone: "✓ Retried {n} failed migration(s) independently",
 				queueCancelled: "✓ Migration cancelled",
-				queuedMove: "Queued: it will move automatically when the session is idle",
-				batchQueuedTail: "; {n} session(s) queued until idle",
+				queuedMove: "Queued: waiting for idle and writer release; a DSH restart may be required",
+				batchQueuedTail: "; {n} session(s) queued for safe migration",
 				previewStatus: "Preview status",
 				previewSource: "Source",
 				previewTarget: "Target path",
@@ -403,7 +403,7 @@ window.__ModuleLoader__.load({
 				forkHint: "Only the current session moves by default. Descendants are migrated independently and reported one by one.",
 				previewWarning: "Note",
 				previewSafe: "Safe to move",
-				previewQueued: "Will wait until idle",
+				previewQueued: "Will enter migration queue (restart may be required)",
 				previewBlocked: "Cannot move now",
 				previewWarningState: "Review before moving",
 				taskRetryBtn: "Retry failed",
@@ -752,6 +752,9 @@ window.__ModuleLoader__.load({
 					function renderPreview(plan) {
 						preview = plan;
 						if (!preview) return;
+						if (!batchCount && typeof preview.title === 'string' && preview.title.trim()) {
+							overlay.querySelector('.wsm-session').textContent = preview.title;
+						}
 						const statusLabels = {
 							safe: t("previewSafe"),
 							queued: t("previewQueued"),
@@ -901,8 +904,15 @@ window.__ModuleLoader__.load({
 		}
 
 		function rowTitle(row, sessionId) {
-			const text = row?.textContent?.replace(/\s+/g, " ").trim();
-			return text && text !== sessionId ? text : t("unnamedSession");
+			// Whole-row text also contains relative timestamps and status labels.
+			try {
+				const key = Object.getOwnPropertyNames(row ?? {}).find((name) => name.startsWith('__reactFiber$'));
+				for (let fiber = key ? row[key] : null; fiber; fiber = fiber.return) {
+					const node = fiber.memoizedProps?.node;
+					if (node && String(node.id) === String(sessionId) && typeof node.title === 'string' && node.title.trim()) return node.title.trim();
+				}
+			} catch { /* authoritative preview can supply the title */ }
+			return '';
 		}
 
 		function fmtBytes(n) {
@@ -986,7 +996,7 @@ window.__ModuleLoader__.load({
 				try {
 					const value = await call("mover.doctor");
 					setDoctor(value);
-					setNote(t("doctorSummary", value.summary));
+					setNote(`${t("doctorSummary", value.summary)}${value.pluginVersion ? ` · v${value.pluginVersion}` : ""}`);
 				} catch (err) {
 					setNote(t("failed", { msg: errMsg(err) }));
 				} finally {
@@ -1862,12 +1872,57 @@ window.__ModuleLoader__.load({
 			};
 			let dragging = null; // {el, els, id, target} —— id/target 在 drop 阶段解析
 			let wsCache = null; // {items, at}
+			// —— drag autoscroll：工作区列表长时，拖到视口外的目标工作区，指针靠近滚动容器边缘即持续滚动 ——
+			let autoscrollRaf = null;
+			let autoscrollState = null; // { scroller, clientX, clientY }
+			/** 从 el 向上找最近的可纵向滚动的祖先（侧栏滚动区），不依赖具体 class，与行定位的 ARIA 策略一致。 */
+			function findScrollableAncestor(el) {
+				let node = el && el.parentElement;
+				while (node) {
+					try {
+						const oy = getComputedStyle(node).overflowY;
+						if ((oy === "auto" || oy === "scroll") && node.scrollHeight > node.clientHeight + 1) return node;
+					} catch { /* getComputedStyle 不可用时跳过 */ }
+					node = node.parentElement;
+				}
+				return null;
+			}
+			/** 停止 autoscroll raf 并清空状态。 */
+			function stopAutoscroll() {
+				if (autoscrollRaf !== null) { cancelAnimationFrame(autoscrollRaf); autoscrollRaf = null; }
+				autoscrollState = null;
+			}
+			/** 每次 dragover 调用：更新指针 Y + 滚动容器；靠近边缘则 raf 持续滚动，离开边缘则停。 */
+			function startAutoscroll(scroller, clientX, clientY) {
+				if (!scroller || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return stopAutoscroll();
+				autoscrollState = { scroller, clientX, clientY };
+				if (autoscrollRaf !== null) return; // 已在跑：tick 读最新 autoscrollState
+				const tick = () => {
+					autoscrollRaf = null;
+					if (!dragging || !autoscrollState || !autoscrollState.scroller.isConnected) { stopAutoscroll(); return; }
+					const sc = autoscrollState.scroller;
+					const r = sc.getBoundingClientRect();
+					const { clientX: x, clientY: y } = autoscrollState;
+					if (x < r.left || x > r.right || y < r.top || y > r.bottom) return stopAutoscroll();
+					const EDGE = Math.min(64, (r.bottom - r.top) / 3), STEP = 12;
+					let delta = 0;
+					if (y < r.top + EDGE) delta = -STEP;
+					else if (y > r.bottom - EDGE) delta = STEP;
+					if (!delta) return stopAutoscroll();
+					const previous = sc.scrollTop;
+					sc.scrollTop = Math.max(0, Math.min(sc.scrollHeight - sc.clientHeight, previous + delta));
+					if (sc.scrollTop === previous) return stopAutoscroll();
+					autoscrollRaf = requestAnimationFrame(tick);
+				};
+				autoscrollRaf = requestAnimationFrame(tick);
+			}
 
 			// 统一登记本插件挂到 document / window 上的监听器与 observer。
 			// 必须成对释放：桌面版热重载会废弃旧 fiber 并重新装载客户端半，
 			// 不释放就会叠加第二份监听器——重复确认框、重复 RPC，
 			// 两份闭包还会互相擦掉对方的多选高亮。
 			const disposers = [];
+			disposers.push(stopAutoscroll);
 			const listen = (type, fn, options) => {
 				document.addEventListener(type, fn, options);
 				disposers.push(() => document.removeEventListener(type, fn, options));
@@ -2195,6 +2250,8 @@ window.__ModuleLoader__.load({
 			listen("dragover", (e) => {
 				clearHints();
 				if (!dragging) return;
+				// autoscroll：指针靠近侧栏滚动容器上下边缘时持续滚动，让远处目标工作区进入视口
+				startAutoscroll(findScrollableAncestor(dragging.el), e.clientX, e.clientY);
 				const header = headerRow(e.target);
 				if (!header || isUngroupedHeader(header)) { dragging.target = null; return; }
 				e.preventDefault(); // 允许在此投放（没有它 drop 根本不会触发）
@@ -2212,6 +2269,7 @@ window.__ModuleLoader__.load({
 			listen("drop", async (e) => {
 				const current = dragging;
 				dragging = null;
+				stopAutoscroll();
 				clearHints();
 				if (!current) return;
 				const header = headerRow(e.target);
@@ -2270,7 +2328,7 @@ window.__ModuleLoader__.load({
 						if (el === current.el) continue; // 拖起行用 dataTransfer 的权威 id
 						try {
 							const id = await resolveRowId(el);
-							if (id) push(id, rowTitle(el, ""));
+							if (id) push(id, rowTitle(el, id));
 							else unresolvedCount += 1;
 						} catch { unresolvedCount += 1; }
 					}
@@ -2290,11 +2348,15 @@ window.__ModuleLoader__.load({
 
 				// ---- 单选：原有确认与 mover.move 路径 ----
 				if (sessions.length === 1) {
-					const { sessionId, sessionTitle } = sessions[0];
+					const { sessionId } = sessions[0];
+					let sessionTitle = sessions[0].sessionTitle;
 					let preview = null;
 					try {
 						const res = await rpcCall("mover.preview", { sessionId, targetWorkspaceId: workspace.workspaceId });
-						if (res?.ok) preview = res.value;
+						if (res?.ok) {
+							preview = res.value;
+							if (typeof preview?.title === 'string' && preview.title.trim()) sessionTitle = preview.title;
+						}
 					} catch (err) {
 						console.debug("[workspace-mover] preview unavailable:", err?.message ?? err);
 					}
@@ -2377,7 +2439,10 @@ window.__ModuleLoader__.load({
 				}
 			}, true);
 
-			listen("dragend", () => { dragging = null; clearHints(); });
+			listen("dragend", () => { dragging = null; stopAutoscroll(); clearHints(); });
+			listen("dragleave", (e) => {
+				if (autoscrollState && !autoscrollState.scroller.contains(e.relatedTarget)) stopAutoscroll();
+			});
 
 			// 整组迁移 + 分组合并：入口在官方组标题的「⋯」菜单（注入「整组迁移…」项）。
 			// 不再拦截浏览器右键——官方菜单同样在右键/⋯按钮打开，拦截会与之冲突。

@@ -8,7 +8,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync, renameSync, realpathSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { zstdCompressSync, constants } from 'node:zlib';
+import { zstdCompressSync, zstdDecompressSync, constants } from 'node:zlib';
 
 import { apply, scanFrames, readHeader, artifactPath, sessionDir, createPersistenceAdapter, openInFileManager, moveDir, stashBackup, verifyRelocatedArtifact, deleteSessionToTrash, moveSession, SCAN_MAX_ITEMS } from '../lib/index.js';
 
@@ -37,6 +37,105 @@ function makeArtifact(header) {
   const ev = zstdCompressSync(Buffer.from(JSON.stringify({ seq: 1 }) + '\n', 'utf8'), OPTS);
   return Buffer.concat([head, ev]);
 }
+
+for (const compression of ['none', 'zstd']) {
+  const encode = (records) => {
+    const bytes = Buffer.from(records.map((record) => JSON.stringify(record) + '\n').join(''), 'utf8');
+    return compression === 'none' ? bytes : Buffer.concat(records.map((record) =>
+      zstdCompressSync(Buffer.from(JSON.stringify(record) + '\n', 'utf8'), OPTS)));
+  };
+  const decode = (bytes) => (compression === 'none' ? bytes.toString('utf8')
+    : scanFrames(bytes).map(([a, b]) => zstdDecompressSync(bytes.subarray(a, b)).toString('utf8')).join(''))
+    .trimEnd().split('\n').map((line) => JSON.parse(line));
+
+  test(`v4 ${compression}: working-directory replay follows migration, preserves events and rolls back byte-for-byte`, async () => {
+    apply(ctx);
+    const old = artifactPath(root, A, 'session-aaa');
+    rmSync(old);
+    ctx.sessionPersistence.compression = compression;
+    const src = join(dirname(old), `session.v4.jsonl${compression === 'zstd' ? '.zstd' : ''}`);
+    const events = [
+      { type: 'working-directory/change', seq: 0, time: 1, data: { cwd: A } },
+      { type: 'working-directory/change', seq: 1, time: 2, data: { cwd: join(A, 'custom') } }
+    ];
+    const original = encode([{ type: 'session', version: 4, id: 'session-aaa', cwd: A }, ...events]);
+    writeFileSync(src, original);
+    const projections = { identity: { cwd: A }, rows: { workingDirectory: { val: A }, title: { val: 'Keep title' } } };
+    let updated;
+    ctx.get = (key) => key === 'sessionProjectionCache' ? { table: { async update(id, fn) { updated = fn(projections); } } } : undefined;
+    entityA.record.sessionIds.push('session-aaa');
+    entityB.failAttach = true;
+    const failure = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+    assert.equal(failure.ok, false);
+    assert.match(failure.error.message, /rolled back cleanly/);
+    assert.deepEqual(readFileSync(src), original);
+    entityB.failAttach = false;
+    const moved = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+    assert.equal(moved.ok, true, JSON.stringify(moved));
+    const records = decode(readFileSync(artifactPath(root, B, 'session-aaa', compression)));
+    assert.deepEqual(records.slice(1, 3), events);
+    assert.equal(records.at(-1).seq, 2);
+    assert.equal(records.at(-1).type, 'working-directory/change');
+    assert.equal(records.at(-1).data.cwd, B);
+    assert.equal(updated.rows.workingDirectory, undefined);
+    assert.equal(updated.rows.title.val, 'Keep title');
+  });
+
+  for (const version of [0, 3, 4]) {
+    test(`backup restore preserves v${version} ${compression} generation`, async () => {
+      apply(ctx);
+      rmSync(dirname(artifactPath(root, A, 'session-aaa')), { recursive: true });
+      ctx.sessionPersistence.compression = compression;
+      const header = { type: 'session', id: 'session-aaa', cwd: A, ...(version ? { version } : {}) };
+      const bytes = encode([header]);
+      const backup = stashBackup('session-aaa', bytes, { compression });
+      const restored = await call('mover.backups.restore', { sessionId: 'session-aaa', fileName: backup.fileName });
+      assert.equal(restored.ok, true, JSON.stringify(restored));
+      const name = `session${version ? `.v${version}` : ''}.jsonl${compression === 'zstd' ? '.zstd' : ''}`;
+      assert.deepEqual(readFileSync(join(sessionDir(root, A, 'session-aaa'), name)), bytes);
+    });
+  }
+}
+
+test('migration snapshots include data drained by flush; flush failure touches no files', async () => {
+  apply(ctx);
+  const source = artifactPath(root, A, 'session-aaa');
+  const original = readFileSync(source);
+  ctx.sessionPersistence.flush = async () => { throw new Error('flush failed'); };
+  const failure = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(failure.ok, false);
+  assert.match(failure.error.message, /flush failed/);
+  assert.deepEqual(readFileSync(source), original);
+  assert.deepEqual(entityA.detached, []);
+  const flushed = makeArtifact({ type: 'session', id: 'session-aaa', cwd: A, title: 'Flushed title' });
+  ctx.sessionPersistence.flush = async () => { writeFileSync(source, flushed); };
+  const moved = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(moved.ok, true, JSON.stringify(moved));
+  const backups = join(root, 'workspace-mover', 'backups');
+  assert.deepEqual(readFileSync(join(backups, readdirSync(backups)[0])), flushed);
+});
+
+test('official header version mismatch and non-contiguous working-directory log are rejected before mutation', async () => {
+  apply(ctx);
+  const source = artifactPath(root, A, 'session-aaa');
+  const mismatched = makeArtifact({ type: 'session', id: 'session-aaa', cwd: A, version: 4 });
+  writeFileSync(source, mismatched);
+  const mismatch = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(mismatch.ok, false);
+  assert.equal(mismatch.error.code, 'unsupported');
+  assert.deepEqual(readFileSync(source), mismatched);
+  const invalid = Buffer.concat([
+    zstdCompressSync(Buffer.from(JSON.stringify({ type: 'session', id: 'session-aaa', cwd: A, version: 3 }) + '\n', 'utf8'), OPTS),
+    zstdCompressSync(Buffer.from(JSON.stringify({ type: 'working-directory/change', seq: 9, time: 1, data: { cwd: A } }) + '\n', 'utf8'), OPTS)
+  ]);
+  writeFileSync(source, invalid);
+  const result = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'unsupported');
+  assert.deepEqual(readFileSync(source), invalid);
+  assert.deepEqual(entityA.detached, []);
+  assert.equal(existsSync(join(root, 'workspace-mover', 'backups')), false);
+});
 
 /**
  * 模拟 dsh 工作区实体：record 快照 + 记账，attach 对已记账 id 跳过校验（官方语义）。
@@ -514,6 +613,8 @@ test('fork-tree 预览会列出后代，Portable Bundle 导入先 dry-run 再执
   assert.equal(exported.ok, true, JSON.stringify(exported));
   assert.equal(exported.value.sessionCount, 2);
   assert.ok(existsSync(join(bundlePath, 'manifest.json')));
+  assert.equal(JSON.parse(readFileSync(join(bundlePath, 'manifest.json'), 'utf8')).pluginVersion,
+    JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version);
   assert.ok(existsSync(join(bundlePath, 'checksums.json')));
 
   entityA.record.sessionIds = [];
@@ -592,7 +693,7 @@ test('正常迁移：文件物理搬移 + 头部改写 + 双向记账 + 有备�
 });
 
 
-test('批量迁移常驻会话通过官方 attach 事件立即更新目标工作区', async () => {
+test('批量迁移驻留会话入队，卸载后通过官方 attach 更新目标工作区', async () => {
   apply(ctx);
   const ids = ['session-aaa', 'session-bbb'];
   const secondArtifact = artifactPath(root, A, 'session-bbb');
@@ -617,7 +718,12 @@ test('批量迁移常驻会话通过官方 attach 事件立即更新目标工作
     targetWorkspaceId: 'wid-b'
   });
   assert.equal(res.ok, true, JSON.stringify(res));
-  assert.equal(res.value.movedCount, 2);
+  assert.equal(res.value.movedCount, 0);
+  assert.equal(res.value.queuedCount, 2);
+  assert.equal(entityB.record.sessionIds.length, 0);
+  live.clear();
+  const drained = await call('mover.migrations.list');
+  assert.ok(drained.value.items.every((item) => item.state === 'done'));
   assert.equal(entityB.record.sessionIds.length, 2);
   const targetEvents = workspaceEvents.filter((event) => event.workspaceId === 'wid-b');
   assert.equal(targetEvents.length, 2, 'each official attach emits a target workspace change');
@@ -713,54 +819,73 @@ test('attach 失败 → 自动回滚到源目录并重新挂账', async () => {
   assert.ok(entityA.attached.includes('session-aaa'), 're-attached to source');
 });
 
-test('常驻内存但空闲的会话允许迁移：刷新索引 + 官方 attach 记账 + 清理持久化状态', async () => {
+test('session becoming resident during flush is blocked before backup or detach', async () => {
   apply(ctx);
-  const staleState = { meta: { cwd: A }, cursor: 1, owner: {} };
-  ctx.sessionPersistence.coordinator = { states: new Map([['session-aaa', staleState]]) };
-  // 模拟注册表三张索引里的旧 cwd 缓存（宿主启动时由 live header 写入）
-  ctx.workspaceRegistry.headers.set('session-aaa', { id: 'session-aaa', cwd: A });
-  ctx.workspaceRegistry.sessionPaths.set('session-aaa', A);
-  ctx.get = (key) => {
-    if (key === 'agents') return { get: () => ({ status: 'idle' }) };
-    if (key === 'sessions') return { get: () => ({ id: 'session-aaa', header: { cwd: A } }) };
-    return undefined;
-  };
-  entityA.record.sessionIds.push('session-aaa');
-
-  const res = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
-  assert.equal(res.ok, true, JSON.stringify(res));
-  assert.ok(!ctx.sessionPersistence.coordinator.states.has('session-aaa'), 'stale state deleted so host re-adopts from disk');
-  assert.ok(existsSync(artifactPath(root, B, 'session-aaa')));
-  // 官方 attach 生效：目标实体持有会话，索引指向新路径
-  assert.ok(entityB.record.sessionIds.includes('session-aaa'), 'membership attached through official path');
-  assert.equal(entityB.attached.includes('session-aaa'), true, 'attach still called to persist membership');
-  assert.equal(ctx.workspaceRegistry.sessionPaths.get('session-aaa'), B, 'sessionPaths points at target');
-  assert.equal(ctx.workspaceRegistry.headers.get('session-aaa').cwd, B, 'headers cache refreshed');
+  let live;
+  ctx.get = (key) => key === 'sessions' ? { get: () => live } : undefined;
+  ctx.sessionPersistence.flush = async () => { live = { header: { cwd: A } }; };
+  const original = readFileSync(artifactPath(root, A, 'session-aaa'));
+  const result = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(result.error.code, 'busy');
+  assert.deepEqual(readFileSync(artifactPath(root, A, 'session-aaa')), original);
+  assert.deepEqual(entityA.detached, []);
 });
 
-test('常驻会话 attach 失败时还原 live header 并回滚', async () => {
-  apply(ctx);
-  entityB.failAttach = true;
-  ctx.get = (key) => {
-    if (key === 'agents') return { get: () => ({ status: 'idle' }) };
-    if (key === 'sessions') return { get: () => ({ id: 'session-aaa', header: { cwd: A } }) };
-    return undefined;
-  };
-  ctx.workspaceRegistry.headers.set('session-aaa', { id: 'session-aaa', cwd: A });
-  ctx.workspaceRegistry.sessionPaths.set('session-aaa', A);
-  entityA.record.sessionIds.push('session-aaa');
+for (const state of ['opening', 'closing', 'unknown', 'throwing']) {
+  test(`writer ${state} without a resident session waits without touching files`, async () => {
+    const writers = new Map([['session-aaa', state === 'opening' ? null : { closing: true }]]);
+    if (state === 'throwing') Object.defineProperty(ctx.sessionPersistence, 'tracker', { get() { throw new Error('backend unavailable'); } });
+    else ctx.sessionPersistence.tracker = state === 'unknown' ? {} : { writers };
+    apply(ctx);
+    const original = readFileSync(artifactPath(root, A, 'session-aaa'));
+    const result = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+    assert.equal(result.error.code, 'busy', JSON.stringify(result));
+    assert.deepEqual(readFileSync(artifactPath(root, A, 'session-aaa')), original);
+    assert.deepEqual(entityA.detached, []);
+    assert.equal(existsSync(artifactPath(root, B, 'session-aaa')), false);
+    if (state === 'opening' || state === 'closing') {
+      writers.clear();
+      const retry = await call('mover.migrations.retry', { taskId: result.error.details.queueTaskId });
+      assert.equal(retry.ok, true, JSON.stringify(retry));
+      assert.equal(readHeader(readFileSync(artifactPath(root, B, 'session-aaa'))).cwd, B);
+    }
+  });
+}
 
-  const res = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
-  assert.equal(res.ok, false);
-  assert.match(res.error.message, /rolled back cleanly/i);
-  // 预置已撤销
-  assert.ok(!entityB.record.sessionIds.includes('session-aaa'), 'target membership absent after rollback');
-  assert.equal(ctx.workspaceRegistry.sessionPaths.get('session-aaa'), A, 'prior sessionPath restored');
-  assert.equal(ctx.workspaceRegistry.headers.get('session-aaa').cwd, A, 'prior header restored');
-  // 文件与源记账恢复
-  assert.ok(existsSync(artifactPath(root, A, 'session-aaa')), 'artifact restored at source');
-  assert.ok(entityA.attached.includes('session-aaa'), 're-attached to source');
+test('writer claim created during detach restores accounting and remains queued', async () => {
+  const writers = new Map();
+  ctx.sessionPersistence.tracker = { writers };
+  entityA.record.sessionIds.push('session-aaa');
+  const detach = entityA.detachSession;
+  entityA.detachSession = async (id) => { await detach.call(entityA, id); writers.set(id, null); };
+  apply(ctx);
+  const original = readFileSync(artifactPath(root, A, 'session-aaa'));
+  const result = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(result.error.code, 'busy', JSON.stringify(result));
+  assert.deepEqual(readFileSync(artifactPath(root, A, 'session-aaa')), original);
+  assert.ok(entityA.record.sessionIds.includes('session-aaa'));
 });
+
+for (const code of ['EACCES', 'EIO', 'ENOTDIR']) {
+  test(`scan propagates ${code} instead of reporting an empty store`, async () => {
+    apply(ctx);
+    const original = fs.readdirSync;
+    fs.readdirSync = (path, ...args) => {
+      if (path === root) throw Object.assign(new Error(`scan failed: ${code}`), { code });
+      return original(path, ...args);
+    };
+    syncBuiltinESMExports();
+    try {
+      const result = await call('mover.scan');
+      assert.equal(result.ok, false);
+      assert.match(result.error.message, new RegExp(code));
+    } finally {
+      fs.readdirSync = original;
+      syncBuiltinESMExports();
+    }
+  });
+}
+
 
 test('回合进行中的会话被拒绝', async () => {
   apply(ctx);
@@ -1229,45 +1354,20 @@ function setupMovedFolder2() {
   return dir;
 }
 
-test('常驻会话热修：冻结头原地换新、@ 搜索缓存按旧根清除、投影检查点身份对齐', async () => {
+test('workspace repoint refuses resident writers before changing registry path', async () => {
   apply(ctx);
   const moved = setupMovedFolder();
-
-  const liveHeader = Object.freeze({ id: 'session-aaa', cwd: A });
-  const liveSession = { header: liveHeader };
-  let disposed = 0;
-  const agent = { session: liveSession };
-  const searches = new Map([[agent, { root: A, dispose() { disposed += 1; } }]]);
-  const applied = [];
-  const projTable = {
-    async update(id, fn) {
-      const next = fn({ identity: { createdAt: 1720000000000, cwd: A }, rows: { k: { ver: 1, seq: 5, val: {} } } });
-      applied.push([id, next]);
-      return next;
-    }
-  };
-  ctx.get = (key) => {
-    if (key === 'agents') return { get: () => ({ status: 'idle' }) };
-    if (key === 'sessions') return { get: (id) => (String(id) === 'session-aaa' ? liveSession : undefined) };
-    if (key === 'fileReferences') return { searches };
-    if (key === 'sessionProjectionCache') return { table: projTable };
-    return undefined;
-  };
-
-  const res = await call('mover.repoint', { workspaceId: 'wid-a', newPath: moved });
-  assert.equal(res.ok, true, JSON.stringify(res));
-
-  const canon = realpathSync(moved);
-  assert.notEqual(liveSession.header, liveHeader, 'live 头已替换而非原地改写');
-  assert.equal(liveSession.header.cwd, canon, 'live 头指向新家');
-  assert.ok(Object.isFrozen(liveSession.header), '替换后的头保持官方冻结语义');
-  assert.equal(disposed, 1, '以旧路径为根的 @ 搜索被 dispose');
-  assert.ok(!searches.has(agent), '缓存条目删除，下次 @ 按新头重建');
-  assert.equal(applied.length, 1);
-  assert.equal(applied[0][0], 'session-aaa');
-  assert.equal(applied[0][1].identity.cwd, canon, '投影检查点 identity.cwd 对齐');
-  assert.equal(applied[0][1].identity.createdAt, 1720000000000, 'createdAt 不变（同一日志生命周期）');
+  const live = { header: Object.freeze({ id: 'session-aaa', cwd: A }) };
+  ctx.get = (key) => key === 'sessions' ? { get: () => live } : undefined;
+  const original = readFileSync(artifactPath(root, A, 'session-aaa'));
+  const result = await call('mover.repoint', { workspaceId: 'wid-a', newPath: moved });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'busy');
+  assert.equal(entityA.path, A);
+  assert.equal(live.header.cwd, A);
+  assert.deepEqual(readFileSync(artifactPath(root, A, 'session-aaa')), original);
 });
+
 
 test('宿主缺少 fileReferences/sessionProjectionCache 服务时热修静默降级', async () => {
   apply(ctx);
@@ -2000,6 +2100,23 @@ test('mover.repairAll：挂错归位 + 未记账补账自动修复，孤儿跳�
   assert.ok(existsSync(oArtifact));
 });
 
+// 全新安装：官方 jsonl 后端惰性创建会话根目录，缺失时视为空库。扫描与一键修复
+// 不能因此抛 ENOENT，也不能替宿主把目录建出来。
+test('全新安装：会话根目录尚不存在时，scan / repairAll 返回空结果且不创建目录', async () => {
+  const missingRoot = join(root, 'sessions-not-created-yet');
+  ctx.sessionPersistence = { ...ctx.sessionPersistence, root: missingRoot, async list() { return []; } };
+  apply(ctx);
+  const scan = await call('mover.scan');
+  assert.equal(scan.ok, true, JSON.stringify(scan.error));
+  assert.deepEqual(scan.value.items, []);
+  assert.equal(scan.value.scanned, 0);
+  const repair = await call('mover.repairAll');
+  assert.equal(repair.ok, true, JSON.stringify(repair.error));
+  assert.equal(repair.value.fixedCount, 0);
+  assert.equal(repair.value.failedCount, 0);
+  assert.equal(existsSync(missingRoot), false, '不替宿主创建会话根目录');
+});
+
 test('mover.repairAll：一切正常时返回全零结果', async () => {
   apply(ctx);
   sharedIndex.sessionPaths.set('session-aaa', A);
@@ -2379,7 +2496,7 @@ const FAKE_EXEC = () => ({ agent: { session: {} }, signal: undefined });
 test('v2.1 apply 在带 dsh-tools 的宿主上注册三个 agent 工具，status 汇报能力位', async () => {
   const { registered } = mountToolStubs();
   apply(ctx);
-  assert.deepEqual(registered.map((t) => t.name), ['mover_list_sessions', 'mover_move_session', 'mover_repair_sessions', 'mover_doctor']);
+  assert.deepEqual(registered.map((t) => t.name), ['mover_list_sessions', 'mover_move_session', 'mover_repair_sessions', 'mover_doctor', 'mover_create_workspace', 'mover_rename_workspace']);
   for (const def of registered) {
     assert.equal(typeof def.execute, 'function', `${def.name}.execute`);
     assert.equal(typeof def.output?.render, 'function', `${def.name}.output.render`);

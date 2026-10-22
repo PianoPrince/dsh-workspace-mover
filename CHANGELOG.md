@@ -1,5 +1,31 @@
 # Changelog
 
+## [2.4.0] - 2026-10-22
+
+### Added
+
+- Agent tools mover_create_workspace (register an existing folder) and mover_rename_workspace (display title only), from PR #7. Duplicate names/folder aliases are rejected. Rename asks for approval unless the calling session has full access.
+- Sidebar edge autoscroll from PR #9, with pointer bounds, scroll limits, drag cancellation and hot-unload cleanup.
+- pluginVersion in status and doctor output.
+
+### Fixed
+
+- Issue #5: also detect opening/closing JSONL writer claims even after the session leaves memory. Unknown handle backends wait safely. Keep header rewrite and relocation synchronous after the final writer check.
+- Fresh-install scans treat only missing storage roots as empty (PR #8); permission and I/O failures remain visible.
+- Optional tools/approval no longer disable the whole plugin. Tools follow host service load/unload; approval requests carry ACP callId. Missing approval or agent context refuses operations requiring confirmation.
+
+- Queue resident sessions until unloading instead of mutating private writer state or frozen live headers; await backend flush before cold migration. Workspace repoint refuses resident writers before changing registry paths.
+- Preserve existing working-directory history and append the destination directory when needed; invalidate the corresponding projection checkpoint. Unsupported sequences are rejected before migration.
+- Restore v3/v4 backup filenames from the official header version; preserve unversioned legacy filenames.
+- Read Portable Bundle pluginVersion from package.json.
+
+### Validation
+
+- Desktop `0.2.1-rc.2`: user accepted candidate `2.4.0-rc.1`; opened-session queueing, continued A2 replies while pending, migration after restart, B1/B2 replies across a second restart, destination working directory and doctor checks passed.
+- Workspace registration, rename rejection/approval, name conflicts, no-op renames and full-access rename passed in Desktop.
+- Windows local gate: 315 tests passed; installed official JSONL/ToolRuntime backend check passed. Sidebar autoscroll is covered by automated DOM checks; the user waived manual autoscroll acceptance.
+- Open sessions finish migration only after their writer is unloaded or DSH is restarted. Switch to another session before restarting so Desktop does not immediately reopen the pending session.
+
 ## [2.3.0] - 2026-10-13
 
 ### Added
