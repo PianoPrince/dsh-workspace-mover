@@ -1,7 +1,7 @@
 # dsh-workspace-mover
 
 
-Running or resident sessions wait in the durable queue. Idle alone does not release a backend writer; unload the session or restart DSH before migration. Migration sets the current working directory to the target workspace, preserving existing directory-change events and appending a final change when needed. See the [validation record](docs/compatibility/dsh-0.2.1-rc.2-2026-10-18.md).
+Current version: 2.4.1. In v2.4.0, running or resident sessions wait in the durable queue. Idle alone does not release a backend writer; unload the session or restart DSH before migration. Migration sets the current working directory to the target workspace, preserving existing directory-change events and appending a final change when needed. See the [Desktop acceptance record](docs/compatibility/issue-5-desktop-acceptance-2026-10-22.md) and [validation record](docs/compatibility/dsh-0.2.1-rc.2-2026-10-18.md).
 > [!IMPORTANT]
 > Unofficial project, independently developed and maintained by community members.
 
@@ -12,9 +12,9 @@ Running or resident sessions wait in the durable queue. Idle alone does not rele
   <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm weekly downloads" src="https://img.shields.io/npm/dw/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.3.0-4d6bfe" style="height:20px; margin:0 2px;" />
-    <img alt="DSH tested 0.2.0-rc.2" src="https://img.shields.io/badge/DSH_tested-0.2.0--rc.2-4c8dff" style="height:20px; margin:0 2px;" />
+    <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm downloads in the last 30 days" src="https://img.shields.io/npm/dm/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.4.1-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="DSH tested 0.2.1-rc.2" src="https://img.shields.io/badge/DSH_tested-0.2.1--rc.2-4c8dff" style="height:20px; margin:0 2px;" />
     <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
   </p>
   <p style="font-size: 0; line-height: 1;">
@@ -245,7 +245,7 @@ Recovery snapshots are separate from primary archives. A reused snapshot retains
 
 ### Session archive format validation
 
-“Local pass” below means repository sandbox fixtures, not an official DSH runtime test. Desktop idle migration and snapshot reuse have user confirmation; remaining runtime checks are pending; see the [compatibility report](docs/compatibility/dsh-0.2.0-rc.2-2026-10-13.md).
+“Local pass” below means repository sandbox fixtures, not an official DSH runtime test for each archive format. The v2.4.0 Desktop 0.2.1-rc.2 acceptance passed for queueing, restart migration, continued replies and workspace-tool approvals; the per-format Official DSH runtime cells below remain pending. Autoscroll has automated DOM coverage only; manual acceptance was waived. See the [Desktop acceptance record](docs/compatibility/issue-5-desktop-acceptance-2026-10-22.md) and [format compatibility report](docs/compatibility/dsh-0.2.0-rc.2-2026-10-13.md).
 
 | Archive layout | Local sandbox | Official DSH runtime |
 | --- | --- | --- |
@@ -298,6 +298,13 @@ Every migration runs through the same safety-bounded pipeline: **byte-level back
 - Major host upgrades that change internal structures may degrade some actions or require a restart; the move-home wizard aborts before touching files if it cannot write safely.
 
 ## 🆕 Recent version
+
+### v2.4.0 · 2026-10-22
+
+- **Issue #5 safe migration**: running or resident sessions enter a durable queue; migration waits for unload or restart and writer release, preserving working-directory history.
+- **Workspace tools**: `mover_create_workspace` registers an existing folder; `mover_rename_workspace` changes only its display name and follows host approval rules.
+- **Failure handling and UI cleanup**: a missing storage root is treated as an empty list while permission and I/O errors remain visible; sidebar autoscroll stops when the pointer leaves the sidebar or reaches a scroll boundary, on drag end/cancel, and on unload.
+- **Acceptance**: DSH Desktop `0.2.1-rc.2` passed queueing, continued replies, two restarts, destination working directory and workspace-tool approval checks. Autoscroll received automated DOM checks only; manual acceptance was waived. See the [Desktop acceptance record](docs/compatibility/issue-5-desktop-acceptance-2026-10-22.md) and [CHANGELOG](CHANGELOG.md).
 
 ### v2.3.0 · 2026-10-13
 

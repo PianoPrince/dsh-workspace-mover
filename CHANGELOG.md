@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.4.1] - 2026-10-22
+
+### Changed
+
+- Synchronize version metadata and documentation badges; runtime behavior is unchanged.
+
 ## [2.4.0] - 2026-10-22
 
 ### Added

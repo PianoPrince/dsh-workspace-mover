@@ -1,9 +1,9 @@
 # dsh-workspace-mover
 
 
-当前版本：2.4.0。[Desktop 验收记录](docs/compatibility/issue-5-desktop-acceptance-2026-10-22.md)。
+当前版本：2.4.1。[Desktop 验收记录](docs/compatibility/issue-5-desktop-acceptance-2026-10-22.md)。
 
-当前待发布修复：运行中或仍驻留内存的会话会进入等待队列。DSH 暂无安全的写入句柄重绑定接口，因此驻留会话需要卸载或重启后才能迁移，单纯变为空闲并不足够。迁移会同步会话的当前工作目录到目标工作区；已有目录变更历史会保留，并追加一条目录变更记录。详见[验证记录与检验方法](docs/compatibility/dsh-0.2.1-rc.2-2026-10-18.md)。
+v2.4.0 会将运行中或仍驻留内存的会话加入持久化等待队列。DSH 暂无安全的写入句柄重绑定接口，因此需等会话卸载或重启后才会迁移，单纯变为空闲不足以释放句柄。迁移会把会话当前工作目录同步到目标工作区，保留已有目录变更历史，并在需要时追加目标目录记录。详见[Desktop 验收记录](docs/compatibility/issue-5-desktop-acceptance-2026-10-22.md)和[验证记录与检验方法](docs/compatibility/dsh-0.2.1-rc.2-2026-10-18.md)。
 > [!IMPORTANT]
 > 非官方项目，由社区成员独立开发和维护。
 
@@ -13,9 +13,9 @@
   <p style="font-size: 0; line-height: 1;">
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm weekly downloads" src="https://img.shields.io/npm/dw/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.3.0-4d6bfe" style="height:20px; margin:0 2px;" />
-    <img alt="DSH tested 0.2.0-rc.2" src="https://img.shields.io/badge/DSH_tested-0.2.0--rc.2-4c8dff" style="height:20px; margin:0 2px;" />
+    <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm 最近 30 天下载量" src="https://img.shields.io/npm/dm/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.4.1-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="DSH tested 0.2.1-rc.2" src="https://img.shields.io/badge/DSH_tested-0.2.1--rc.2-4c8dff" style="height:20px; margin:0 2px;" />
     <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
   </p>
   <p style="font-size: 0; line-height: 1;">
@@ -244,7 +244,7 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 
 ### 会话档案格式验证
 
-以下“本地通过”指仓库沙盒 fixture，不代表官方 DSH runtime 实测。Desktop 空闲迁移与快照复用已获用户反馈通过；其余真实 runtime 场景仍待验证，详见[兼容报告](docs/compatibility/dsh-0.2.0-rc.2-2026-10-13.md)。
+以下“本地通过”指仓库沙盒 fixture，不代表官方 DSH runtime 逐格式实测。2.4.0 已在 Desktop 0.2.1-rc.2 完成排队、重启迁移、继续发送和工作区工具审批验收；下表逐格式的官方 runtime 状态仍待单独验收。自动滚动通过自动 DOM 检查，人工验收已豁免。详见[Desktop 验收记录](docs/compatibility/issue-5-desktop-acceptance-2026-10-22.md)和[格式兼容报告](docs/compatibility/dsh-0.2.0-rc.2-2026-10-13.md)。
 
 | 档案布局 | 本地沙盒 | 官方 DSH runtime |
 | --- | --- | --- |
@@ -312,6 +312,13 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 取值非法或越界时回退默认值——配置写错不会让功能失效。
 
 ## 🆕 最近版本
+
+### v2.4.0 · 2026-10-22
+
+- **Issue #5 安全迁移**：运行中或仍驻留内存的会话进入持久化队列；等会话卸载或 DSH 重启、写入句柄关闭后再迁移，并保留工作目录变更历史。
+- **工作区工具**：`mover_create_workspace` 登记已有目录；`mover_rename_workspace` 只修改显示名称，并按宿主权限请求审批。
+- **故障处理与界面清理**：缺失存储根目录视为空列表，权限和 I/O 错误继续明确报告；指针离开侧栏或到达边界、拖动结束或取消、插件卸载时都会停止自动滚动。
+- **验收**：DSH Desktop `0.2.1-rc.2` 的排队、继续发送、两次重启、目标工作目录及工作区工具审批通过；自动滚动仅完成人工豁免后的自动 DOM 检查。详见[Desktop 验收记录](docs/compatibility/issue-5-desktop-acceptance-2026-10-22.md)和[CHANGELOG](CHANGELOG.md)。
 
 ### v2.3.0 · 2026-10-13
 
