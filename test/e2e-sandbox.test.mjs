@@ -62,13 +62,18 @@ for (const compression of ['none', 'zstd']) {
     writeFileSync(src, original);
     const projections = { identity: { cwd: A }, rows: { workingDirectory: { val: A }, title: { val: 'Keep title' } } };
     let updated;
-    ctx.get = (key) => key === 'sessionProjectionCache' ? { table: { async update(id, fn) { updated = fn(projections); } } } : undefined;
+    let cached = projections;
+    ctx.get = (key) => key === 'sessionProjectionCache' ? { table: {
+      get() { return cached; }, async put(id, value) { cached = updated = value; }
+    } } : undefined;
     entityA.record.sessionIds.push('session-aaa');
     entityB.failAttach = true;
     const failure = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
     assert.equal(failure.ok, false);
     assert.match(failure.error.message, /rolled back cleanly/);
     assert.deepEqual(readFileSync(src), original);
+    assert.equal(cached.identity.cwd, A, 'failed attach restores the title identity');
+    assert.deepEqual(cached.rows, projections.rows, 'rollback restores every original projection row');
     entityB.failAttach = false;
     const moved = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
     assert.equal(moved.ok, true, JSON.stringify(moved));
@@ -1435,6 +1440,46 @@ test('mover.archived 列出归档会话：归属取自原始记账，cwd 挂错�
   assert.equal(bbb.ownerWorkspaceId, 'wid-a');
   assert.equal(bbb.suggestedWorkspaceId, 'wid-b');
   assert.equal(bbb.suggestedTitle, 'wid-b');
+});
+
+test('current per-record and live titles override legacy titles across repair, archive, preview and backups', async () => {
+  apply(ctx);
+  const id = 'session-aaa';
+  writeFileSync(artifactPath(root, A, id), makeArtifact({ type: 'session', id, cwd: A }));
+  const storage = join(root, 'storages');
+  const checkpoint = join(storage, 'session_projcache', 'sessions', `${id}.json`);
+  mkdirSync(dirname(checkpoint), { recursive: true });
+  writeFileSync(join(storage, 'session_projcache.json'), JSON.stringify({ tables: {
+    sessions: { [id]: { rows: { title: { val: 'Outdated title' } } } }
+  } }), 'utf8');
+  writeFileSync(checkpoint, JSON.stringify({ version: 7, record: {
+    identity: { cwd: A }, rows: { title: { val: '标题保留测试' } }
+  } }), 'utf8');
+  entityA.record.sessionIds.push(id);
+  sharedIndex.sessionPaths.set(id, A);
+  ctx.workspaceRegistry.archivedSessionIds = [id];
+  stashBackup(id, readFileSync(artifactPath(root, A, id)));
+  const titles = async () => {
+    const scan = await call('mover.scan');
+    const archived = await call('mover.archived');
+    const preview = await call('mover.preview', { sessionId: id, targetWorkspaceId: 'wid-b' });
+    const backups = await call('mover.backups.list');
+    for (const result of [scan, archived, preview, backups]) assert.equal(result.ok, true, JSON.stringify(result));
+    return [scan.value.items.find((item) => item.sessionId === id).title,
+      archived.value.items.find((item) => item.sessionId === id).title,
+      preview.value.title, backups.value.items.find((item) => item.sessionId === id).title];
+  };
+  assert.deepEqual(await titles(), Array(4).fill('标题保留测试'));
+  ctx.get = (key) => key === 'sessionProjectionCache' ? { table: {
+    get: () => ({ rows: { title: { val: 'Latest live title' } } })
+  } } : undefined;
+  assert.deepEqual(await titles(), Array(4).fill('Latest live title'));
+  ctx.get = () => undefined;
+  writeFileSync(checkpoint, '{broken', 'utf8');
+  assert.deepEqual(await titles(), Array(4).fill('Outdated title'));
+  rmSync(join(storage, 'session_projcache.json'));
+  const scan = await call('mover.scan');
+  assert.equal(scan.value.items.find((item) => item.sessionId === id).title, '未命名会话');
 });
 
 test('mover.unarchive 取消归档：归档集移除、账本不动、无迁移', async () => {

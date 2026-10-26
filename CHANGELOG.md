@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.4.2] - 2026-10-26
+
+- Reopen the still-selected removed conversation through host navigation after migration or rollback, waiting for the old view's retained references to release before reopening. Do not change a later user selection. Replace the page-refresh hint with a fully-quit-and-restart hint for Desktop.
+- Read titles from the live cache and current per-record checkpoints before legacy aggregate caches, fixing unnamed entries in repair/archive/preview/backup lists.
+- Tracked idle sessions now release their public Agent lifecycle, physically migrate and reload through the host controller without a pending queue or restart. New requests are refused while the lifecycle is draining.
+- Dragging a running session offers cancellation or explicit stop-and-move. The backend rechecks consent; it never stops a newly running task based on a stale idle preview.
+- Fix #10: use the projection table get/put contract and align title-cache identity before publishing target membership. Failed attachment restores the source checkpoint identity.
+- Restart once after installation/hot update to capture lifecycle handles. Untracked or unsupported live writers remain protected. Existing queue APIs remain compatible.
+- Validation: user accepted candidate 2.4.2-rc.4 on DSH Desktop 0.2.1-rc.2: immediate movement, title preservation, continued replies without switching views, cancel while running, explicit stop-and-move, and persistence/continued replies after restart. Windows local checks: 327 passed, 2 optional host tests skipped; installed-host checks: all 4 passed. Web and the reporter's DSH 0.2.0-rc.2 environment remain unverified.
+
 ## [2.4.1] - 2026-10-22
 
 ### Changed

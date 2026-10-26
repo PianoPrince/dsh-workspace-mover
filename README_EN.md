@@ -1,7 +1,7 @@
 # dsh-workspace-mover
 
 
-Current version: 2.4.1. In v2.4.0, running or resident sessions wait in the durable queue. Idle alone does not release a backend writer; unload the session or restart DSH before migration. Migration sets the current working directory to the target workspace, preserving existing directory-change events and appending a final change when needed. See the [Desktop acceptance record](docs/compatibility/issue-5-desktop-acceptance-2026-10-22.md) and [validation record](docs/compatibility/dsh-0.2.1-rc.2-2026-10-18.md).
+Current version: **2.4.2**. Accepted on DSH Desktop `0.2.1-rc.2`. Tracked idle sessions release their writer, physically move and reload. Running tasks require explicit Stop task and move confirmation. Restart DSH once after installing/updating to capture lifecycle handles. Untracked writers block immediate drag migration; old durable queues remain inspectable and cancellable. See the [migration and title-fix acceptance record](docs/compatibility/immediate-migration-2026-10-26.md).
 > [!IMPORTANT]
 > Unofficial project, independently developed and maintained by community members.
 
@@ -13,7 +13,7 @@ Current version: 2.4.1. In v2.4.0, running or resident sessions wait in the dura
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm downloads in the last 30 days" src="https://img.shields.io/npm/dm/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.4.1-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.4.2-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="DSH tested 0.2.1-rc.2" src="https://img.shields.io/badge/DSH_tested-0.2.1--rc.2-4c8dff" style="height:20px; margin:0 2px;" />
     <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
   </p>
@@ -64,7 +64,7 @@ DeepSeek Harness's sidebar supports drag-to-reorder **within** a workspace, but 
 - **🛡️ Data protection**: identical session content keeps one physical snapshot, so back-and-forth moves do not grow storage without bound; every move still appears in history with snapshot counts and footprint visible
 - **⏪ Move history and undo**: last 100 cross-workspace moves; bulk operations aggregate into one undoable entry
 - **🧾 Task center**: bulk moves persist per-item state (done/failed, last error and attempt time); failed items retry in one click — from each session's CURRENT location, never a stale path
-- **⏳ Busy-session queue**: running sessions are never touched; queued work is persistent, with per-item cancel/retry and batch retry for failed items
+- **⏳ Immediate migration**: tracked idle sessions release their lifecycle, physically move and reload; running tasks require explicit stop confirmation. Existing queued work remains inspectable, cancellable and retryable
 - **🔎 Migration preview**: before confirmation, show source, target path, collisions, running state, adapter mode, and estimated new backup bytes; reuse is called out when a matching snapshot already exists
 - **📂 Empty-group cleanup / open folder**: only truly empty workspaces are listed; open a group directory in your file manager
 - **🤖 Agent tools**: six model-callable tools — `mover_list_sessions` / `mover_move_session` / `mover_repair_sessions` / `mover_doctor` / `mover_create_workspace` / `mover_rename_workspace` — so "move this session to group X" in the conversation runs the same backup-first pipeline as the panel, and workspaces can be created and renamed too; move, repair and rename ask for user approval first (rename skips it under full access), and hosts without `dsh-tools` skip them automatically
@@ -237,6 +237,7 @@ Recovery snapshots are separate from primary archives. A reused snapshot retains
 
 | Plugin version | Verified DeepSeek Harness | Node | Notes |
 |----------------|---------------------------|------|-------|
+| 2.4.2 | `0.2.1-rc.2` Desktop | `≥22` | User accepted immediate migration, continued replies in the same view, cancel/stop-and-move, titles and restart recovery |
 | 2.4.0 | `0.2.1-rc.2` Desktop | `≥22` | User accepted queueing, continued replies, two restarts, target cwd and workspace-tool approval; autoscroll automated checks only |
 | 2.3.0 | `0.2.0-rc.2` Desktop (partial user verification) | `≥22` | Idle migration and snapshot reuse confirmed; Web, queue process restart, and full runtime smoke pending |
 | 2.2.0 | `0.1.5-rc.1`, `0.1.5-rc.2`, **`0.2.0 desktop`** (0.2.0-rc.2 core) | `≥22` | Storage-layout check; Agent tools + desktop verified; tools auto-skip on hosts without `dsh-tools` |
@@ -298,6 +299,13 @@ Every migration runs through the same safety-bounded pipeline: **byte-level back
 - Major host upgrades that change internal structures may degrade some actions or require a restart; the move-home wizard aborts before touching files if it cannot write safely.
 
 ## 🆕 Recent version
+
+### v2.4.2 · 2026-10-26
+
+- **Immediate migration**: tracked idle sessions release their writer, physically move and reload. Running tasks require explicit stop-and-move consent; cancellation leaves them running.
+- **Titles (#10)**: align projection identity before publishing membership and read current per-record checkpoints, fixing unnamed entries after migration and in archive/repair lists.
+- **Conversation recovery**: wait for old view references to release before reopening, fixing the unavailable composer. Desktop guidance now says to fully quit and restart if needed.
+- **Acceptance**: these flows and continued replies after restart passed on Desktop `0.2.1-rc.2`. Fully restart DSH once after updating. See the [acceptance record](docs/compatibility/immediate-migration-2026-10-26.md) and [CHANGELOG](CHANGELOG.md). Full Web and older-host acceptance remains pending.
 
 ### v2.4.0 · 2026-10-22
 

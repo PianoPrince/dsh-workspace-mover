@@ -1,9 +1,9 @@
 # dsh-workspace-mover
 
 
-当前版本：2.4.1。[Desktop 验收记录](docs/compatibility/issue-5-desktop-acceptance-2026-10-22.md)。
+当前版本：**2.4.2**。已通过 DSH Desktop `0.2.1-rc.2` 人工验收，详见[即时迁移与标题修复验收记录](docs/compatibility/immediate-migration-2026-10-26.md)。
 
-v2.4.0 会将运行中或仍驻留内存的会话加入持久化等待队列。DSH 暂无安全的写入句柄重绑定接口，因此需等会话卸载或重启后才会迁移，单纯变为空闲不足以释放句柄。迁移会把会话当前工作目录同步到目标工作区，保留已有目录变更历史，并在需要时追加目标目录记录。详见[Desktop 验收记录](docs/compatibility/issue-5-desktop-acceptance-2026-10-22.md)和[验证记录与检验方法](docs/compatibility/dsh-0.2.1-rc.2-2026-10-18.md)。
+支持即时迁移的会话：空闲时释放写入句柄、实际搬移并重新加载；运行中可取消，或明确选择「停止任务并迁移」。迁移保留标题和历史。安装或热更新后请彻底重启 DSH 一次，以接入会话生命周期；无法安全释放的会话会明确阻止拖动迁移。旧队列仍保留恢复与取消入口。后端验证与实际验收结果见 [即时迁移记录](docs/compatibility/immediate-migration-2026-10-26.md)。
 > [!IMPORTANT]
 > 非官方项目，由社区成员独立开发和维护。
 
@@ -14,7 +14,7 @@ v2.4.0 会将运行中或仍驻留内存的会话加入持久化等待队列。D
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm 最近 30 天下载量" src="https://img.shields.io/npm/dm/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.4.1-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.4.2-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="DSH tested 0.2.1-rc.2" src="https://img.shields.io/badge/DSH_tested-0.2.1--rc.2-4c8dff" style="height:20px; margin:0 2px;" />
     <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
   </p>
@@ -65,7 +65,7 @@ DeepSeek Harness 侧边栏可以拖拽排序**同一工作区**内的会话，�
 - **🛡️ 数据保护**：相同会话内容只保留一份物理快照，往返迁移不会无限增长；每次迁移仍写入历史，备份列表显示快照份数与占用
 - **⏪ 移动历史与撤回**：记录最近 100 次跨工作区移动，批量聚合为一条，整批可一键撤回
 - **🧾 迁移任务中心**：批量迁移逐项持久化记录（完成/失败、最后错误与尝试时间），失败项一键重试——按会话当前位置重新迁移，不用陈旧路径
-- **⏳ 忙碌会话自动排队**：运行中或写入句柄未释放的会话不会触碰文件，卸载或重启后自动重试；队列持久化，支持单项取消、单项重试和批量重试失败项
+- **⏳ 即时迁移**：接入生命周期的空闲会话释放句柄后直接搬移并重新加载；运行中需明确选择停止任务。旧队列仍可查询、取消和重试
 - **🔎 迁移预览**：确认前展示来源、目标路径、冲突、运行状态、适配器和本次预计新增备份大小；已有内容快照会明确显示复用
 - **📂 空分组清理 / 打开文件夹**：只列出真正零成员的工作区；组菜单可直达系统文件管理器
 - **🤖 Agent 工具**：`mover_list_sessions` / `mover_move_session` / `mover_repair_sessions` / `mover_doctor` / `mover_create_workspace` / `mover_rename_workspace` 六个模型可调用工具——在对话里说「把这个会话挪到某组」即可触发与面板完全相同的备份回滚管线，也能新建、改名工作区；迁移、修复与改名执行前经宿主审批弹窗确认（改名在完全访问模式下免确认），未装 dsh-tools 的宿主自动停用
@@ -236,6 +236,7 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 
 | 插件版本 | 已验证 DeepSeek Harness | Node | 备注 |
 |----------|-------------------------|------|------|
+| 2.4.2 | `0.2.1-rc.2` Desktop | `≥22` | 用户确认即时迁移、当前界面继续发送、运行中取消/停止迁移、标题保留及重启恢复 |
 | 2.4.0 | `0.2.1-rc.2` Desktop | `≥22` | 用户确认排队、迁移前后继续发送、两次重启、目标工作目录和工作区工具审批；自动滚动仅自动检查 |
 | 2.3.0 | `0.2.0-rc.2` Desktop（用户验证部分场景） | `≥22` | 空闲会话迁移与快照复用已反馈通过；Web、队列进程重启和完整 runtime smoke 待验证 |
 | 2.2.0 | `0.1.5-rc.1`、`0.1.5-rc.2`、**`0.2.0 桌面版`**（0.2.0-rc.2 内核） | `≥22` | 存储布局自检、Agent 工具与桌面版实测；宿主缺 `dsh-tools` 时工具自动停用 |
@@ -312,6 +313,13 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 取值非法或越界时回退默认值——配置写错不会让功能失效。
 
 ## 🆕 最近版本
+
+### v2.4.2 · 2026-10-26
+
+- **即时迁移**：已接入生命周期的空闲会话直接释放句柄、搬移并重新加载；运行中可取消或明确选择“停止任务并迁移”。
+- **标题修复（#10）**：对齐标题缓存归属，兼容新版单记录缓存，避免迁移及归档列表误显示“未命名会话”。
+- **迁移后继续对话**：等待旧界面引用释放后重新打开，修复“会话不可用”；桌面提示改为必要时彻底退出并重启。
+- **验收**：Desktop `0.2.1-rc.2` 上述流程及重启后继续发送均通过。更新后请彻底重启 DSH 一次。见[验收记录](docs/compatibility/immediate-migration-2026-10-26.md)和[CHANGELOG](CHANGELOG.md)。Web 与旧版宿主的完整验收仍待补齐。
 
 ### v2.4.0 · 2026-10-22
 

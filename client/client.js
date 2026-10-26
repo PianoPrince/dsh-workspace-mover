@@ -24,7 +24,8 @@ window.__ModuleLoader__.load({
 				move: "移动",
 				cancel: "取消",
 				moving: "正在移动…",
-				done: "✓ 已移动到「{title}」；若侧边栏未自动刷新，请手动刷新页面",
+				done: "✓ 已移动到「{title}」；若侧边栏未更新，请彻底退出并重启应用",
+				reopenFailed: "迁移操作已结束，但当前对话未能重新连接。请彻底退出并重启应用；无需重复迁移。",
 				rolledBack: "已自动回滚：{msg}",
 				failed: "移动失败：{msg}",
 				noTarget: "无法识别目标工作区（侧边栏结构变化？）",
@@ -191,7 +192,9 @@ window.__ModuleLoader__.load({
 				previewBackupHelp: "迁移前保存恢复快照，用于失败回滚和备份恢复；相同会话内容会复用已有快照，主档案仍只移动一份。",
 				previewSameWorkspace: "会话已在目标工作区，无需移动。",
 				previewSelfHeal: "档案已在目标工作区，将补齐归属记录。",
-				previewRunning: "会话正在运行，将排队等待空闲。",
+				previewRunning: "会话正在运行。确认后将停止当前任务，保存记录并迁移；取消则继续当前任务。",
+				stopAndMove: "停止任务并迁移",
+				lifecycleUnavailable: "此会话尚未接入即时迁移，请彻底重启 DSH 后重试。",
 				previewNoPhysicalPath: "当前 DSH 未提供原始档案路径，无法迁移档案目录。",
 				previewSourceMissing: "来源会话档案缺失或无法读取。",
 				previewCollision: "目标工作区已有同 ID 档案，已阻止覆盖。",
@@ -203,7 +206,7 @@ window.__ModuleLoader__.load({
 				forkHint: "默认只迁移当前会话；选择后代分支会逐项迁移并独立记录结果。",
 				previewWarning: "提示",
 				previewSafe: "可安全移动",
-				previewQueued: "会进入迁移等待队列（可能需重启）",
+				previewQueued: "无法立即迁移，请重启后重试",
 				previewBlocked: "当前不可移动",
 				previewWarningState: "需要确认",
 				taskRetryBtn: "重试失败项",
@@ -224,7 +227,8 @@ window.__ModuleLoader__.load({
 				move: "Move",
 				cancel: "Cancel",
 				moving: "Moving…",
-				done: "✓ Moved to \"{title}\"; refresh the page if the sidebar does not update",
+				done: "✓ Moved to \"{title}\"; fully quit and restart the app if the sidebar does not update",
+				reopenFailed: "The migration operation has finished, but the conversation could not reconnect. Fully quit and restart the app; do not repeat the move.",
 				rolledBack: "Rolled back automatically: {msg}",
 				failed: "Move failed: {msg}",
 				noTarget: "Cannot resolve target workspace (sidebar layout changed?)",
@@ -391,7 +395,9 @@ window.__ModuleLoader__.load({
 				previewBackupHelp: "A recovery snapshot is saved before migration for rollback and restoration. Identical session content reuses an existing snapshot while the primary archive still moves only once.",
 				previewSameWorkspace: "The session is already in the target workspace; no move is needed.",
 				previewSelfHeal: "The archive is already in the target workspace; its membership will be repaired.",
-				previewRunning: "The session is running and will wait until idle.",
+				previewRunning: "The session is running. Confirm to stop the task, save its history and move; cancel to keep it running.",
+				stopAndMove: "Stop task and move",
+				lifecycleUnavailable: "Immediate migration is unavailable for this session. Fully restart DSH and retry.",
 				previewNoPhysicalPath: "This DSH build exposes no raw archive path; archive directory migration is unavailable.",
 				previewSourceMissing: "The source session archive is missing or unreadable.",
 				previewCollision: "The target already contains an archive with this ID; overwriting is blocked.",
@@ -403,7 +409,7 @@ window.__ModuleLoader__.load({
 				forkHint: "Only the current session moves by default. Descendants are migrated independently and reported one by one.",
 				previewWarning: "Note",
 				previewSafe: "Safe to move",
-				previewQueued: "Will enter migration queue (restart may be required)",
+				previewQueued: "Immediate migration unavailable; restart and retry",
 				previewBlocked: "Cannot move now",
 				previewWarningState: "Review before moving",
 				taskRetryBtn: "Retry failed",
@@ -450,6 +456,7 @@ window.__ModuleLoader__.load({
 				'provider does not expose enough public persistence APIs': 'adapterUnavailable',
 				'physical move uses the JSONL path fallback; official raw-byte path API is unavailable': 'adapterFilesystemFallback',
 				'session is currently running and will wait for idle': 'previewRunning',
+				'session is running; moving requires explicit stop confirmation': 'previewRunning',
 				'provider exposes public handles but no physical raw-byte path; this version cannot relocate the archive directory': 'previewNoPhysicalPath',
 				'source session archive is missing or unreadable': 'previewSourceMissing',
 				'target workspace already contains an archive with this session id': 'previewCollision',
@@ -774,6 +781,11 @@ window.__ModuleLoader__.load({
 							warnings.length ? `${t("previewWarning")}: ${warnings.join("; ")}` : ""
 						].filter(Boolean).join("\n");
 						okBtn.disabled = preview.status === "blocked";
+						okBtn.textContent = preview.running ? t('stopAndMove') : (batchCount ? t('batchMove') : t('move'));
+						if (preview.status === 'queued' && !preview.liveMigration) {
+							okBtn.disabled = true;
+							previewBox.textContent += `\n${t('lifecycleUnavailable')}`;
+						}
 					}
 					renderPreview(preview);
 					async function refreshPreview() {
@@ -801,7 +813,7 @@ window.__ModuleLoader__.load({
 						warn.textContent = t("idUnresolvedPartial", { n: unresolvedCount });
 						hint.after(warn);
 					}
-					okBtn.textContent = batchCount ? t("batchMove") : t("move");
+					okBtn.textContent = preview?.running ? t('stopAndMove') : (batchCount ? t("batchMove") : t("move"));
 					document.addEventListener("keydown", onKey);
 					function onKey(e) { if (e.key === "Escape") close(null); }
 					function close(value) {
@@ -812,7 +824,7 @@ window.__ModuleLoader__.load({
 					}
 					overlay.querySelector(".wsm-cancel").addEventListener("click", () => close(null));
 					okBtn.addEventListener("click", () => {
-						if (!okBtn.disabled) close({ mode: forkMode.value || "current-only", targetWorkspaceId: selectedWorkspace.workspaceId });
+						if (!okBtn.disabled) close({ mode: forkMode.value || "current-only", targetWorkspaceId: selectedWorkspace.workspaceId, stopRunning: preview?.running === true });
 					});
 					openDialog(overlay, close);
 				});
@@ -1856,6 +1868,34 @@ window.__ModuleLoader__.load({
 		function apply(ctx) {
 			if (applied) return;
 			applied = true;
+			let active = true;
+			const viewLifetime = new AbortController();
+			// React releases its Provider reference after clearMain publishes absence,
+			// not during clearMain itself. Reopening synchronously retains the removed
+			// generation again. Wait for the Controller to retire that exact binding.
+			const waitForViewRelease = (sessions, id, previous) => {
+				const source = sessions.retainInfo?.(id);
+				if (typeof source?.subscribe !== 'function') throw new Error('Session retention observation is unavailable');
+				return new Promise((resolve, reject) => {
+					let unsubscribe;
+					let settled = false;
+					const finish = (error) => {
+						if (settled) return;
+						settled = true;
+						clearTimeout(timer);
+						unsubscribe?.();
+						viewLifetime.signal.removeEventListener('abort', aborted);
+						error ? reject(error) : resolve();
+					};
+					const check = () => { if (sessions.binding(id) !== previous) finish(); };
+					const aborted = () => finish(new Error('Plugin unloaded'));
+					const timer = setTimeout(() => finish(new Error('Previous conversation is still retained')), 3000);
+					unsubscribe = source.subscribe(check);
+					viewLifetime.signal.addEventListener('abort', aborted, { once: true });
+					if (viewLifetime.signal.aborted) aborted();
+					else check();
+				});
+			};
 			// 在 apply（上下文必然活跃）时立即捕获 connection 服务实例本身，而不是持有 ctx
 			// 做惰性访问：桌面版会在热重载 / 客户端重组时废弃本插件的旧 fiber，此后
 			// ctx.connection 会抛 "cannot get required service 'connection' in inactive context"
@@ -1863,12 +1903,48 @@ window.__ModuleLoader__.load({
 			// 插件（dsh-client-connection）持有，不受本插件 fiber 存亡影响。
 			let connection = null;
 			try { connection = ctx.connection; } catch { /* 上下文未就绪：rpcCall 内兜底重取 */ }
-			const rpcCall = (endpoint, payload) => {
+			const rpcCall = async (endpoint, payload) => {
 				if (!connection) {
 					try { connection = ctx.connection; } catch { /* 仍然失活：走下面的友好报错 */ }
 				}
 				if (!connection) throw new Error(t("contextStale"));
-				return connection.rpc.call(CHANNEL, endpoint, payload ?? {});
+				const migrating = endpoint === 'mover.move' || endpoint === 'mover.moveMany';
+				let ui, currentId;
+				try {
+					ui = migrating ? ctx.get?.('uiWorkspace') : null;
+					currentId = ui?.selection?.getSnapshot?.()?.sessionId;
+				} catch { /* Optional view service may already be unloading. */ }
+				try {
+					return await connection.rpc.call(CHANNEL, endpoint, payload ?? {});
+				} finally {
+					// Official dispose emits api-session/removed. The client keeps that
+					// flag permanently on its old Session, even after the host resumes it.
+					// Release/reopen only the still-selected removed view via host APIs.
+					// Also repair rollback failures; never steal a later user selection.
+					if (active && currentId) {
+						try {
+							const sessions = ctx.get?.('sessions');
+							const previous = sessions?.binding?.(currentId);
+							if (ui.selection.getSnapshot()?.sessionId === currentId
+								&& previous?.session?.getSnapshot?.()?.removed) {
+								if (typeof ui.clearMain !== 'function' || typeof ui.openSession !== 'function') throw new Error('Session reopening is unavailable');
+								ui.clearMain();
+								await waitForViewRelease(sessions, currentId, previous);
+								// Selection can change while React is releasing the old view.
+								if (active && !ui.selection.getSnapshot()?.sessionId) {
+									ui.openSession(currentId);
+									const session = sessions.binding(currentId)?.session;
+									await session?.open?.();
+									const snapshot = session?.getSnapshot?.();
+									if (!session || snapshot?.removed || snapshot?.openError) throw new Error('Session reopening failed');
+								}
+							}
+						} catch (error) {
+							console.debug('[workspace-mover] conversation reconnect failed:', error?.message ?? error);
+							if (active) toast(t('reopenFailed'), true);
+						}
+					}
+				}
 			};
 			let dragging = null; // {el, els, id, target} —— id/target 在 drop 阶段解析
 			let wsCache = null; // {items, at}
@@ -2370,7 +2446,7 @@ window.__ModuleLoader__.load({
 					if (!choice) return;
 					workspace = workspaceItems.find((item) => item.workspaceId === choice.targetWorkspaceId);
 					try {
-						const res = await rpcCall("mover.move", { sessionId, sessionTitle, targetWorkspaceId: workspace.workspaceId, mode: choice.mode });
+						const res = await rpcCall("mover.move", { sessionId, sessionTitle, targetWorkspaceId: workspace.workspaceId, mode: choice.mode, stopRunning: choice.stopRunning, allowQueue: false });
 						if (res?.ok) {
 							wsCache = null;
 							scanCache = null;
@@ -2382,7 +2458,7 @@ window.__ModuleLoader__.load({
 						} else {
 							const msg = res?.error?.message ?? "unknown";
 							if (res?.error?.code === "busy") {
-								toast(t("queuedMove"));
+								toast(res.error?.details?.queueTaskId ? t("queuedMove") : t('failed', { msg }), true);
 								return;
 							}
 							const rolled = res?.error?.code === "rollback-failed" || /roll/i.test(msg);
@@ -2407,6 +2483,7 @@ window.__ModuleLoader__.load({
 					const warnings = plans.flatMap((item) => item.warnings ?? []).filter(Boolean);
 					preview = {
 						...plans[0],
+						running: plans.some((item) => item.running),
 						status: blocked === plans.length && plans.length > 0 ? "blocked" : (blocked > 0 || queued > 0 ? "warning" : "safe"),
 						source: { title: t("scannedN", { n: sessions.length }) },
 						estimatedBackupBytes: plans.reduce((sum, item) => sum + Number(item.estimatedBackupBytes || 0), 0),
@@ -2418,7 +2495,7 @@ window.__ModuleLoader__.load({
 				const choice = await confirmMove({ workspace, batchCount: sessions.length, unresolvedCount, preview });
 				if (!choice) return;
 				try {
-					const res = await rpcCall("mover.moveMany", { sessions, targetWorkspaceId: workspace.workspaceId, mode: choice.mode });
+					const res = await rpcCall("mover.moveMany", { sessions, targetWorkspaceId: workspace.workspaceId, mode: choice.mode, stopRunning: choice.stopRunning, allowQueue: false });
 					if (!res?.ok) {
 						const msg = res?.error?.message ?? "unknown";
 						const rolled = res?.error?.code === "rollback-failed" || /roll/i.test(msg);
@@ -2584,6 +2661,8 @@ window.__ModuleLoader__.load({
 			// dragging / 缓存永远不会被回收。
 			if (typeof ctx.effect === "function") {
 				ctx.effect(() => () => {
+					active = false;
+					viewLifetime.abort();
 					applied = false;
 					for (const dispose of disposers.splice(0)) {
 						try { dispose(); } catch { /* 单个失败不影响其余 */ }

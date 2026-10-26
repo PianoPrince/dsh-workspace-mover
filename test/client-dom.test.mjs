@@ -566,7 +566,7 @@ test('拖拽跨组移动：经权威 fiber 通道解析出正确 sessionId', asy
   assert.equal(calls[0].payload.targetWorkspaceId, 'wid-b');
 });
 
-test('迁移标题使用权威预览，不包含侧边栏时间；驻留队列提示可能需重启', async () => {
+test('即时迁移使用权威标题，不包含侧边栏时间，不启用排队', async () => {
   resetDom();
   mount();
   const row = sessionRow('测试刚刚', 'session-aaa');
@@ -575,21 +575,113 @@ test('迁移标题使用权威预览，不包含侧边栏时间；驻留队列�
   const prior = rpcResponder;
   setResponder((endpoint, payload) => endpoint === 'mover.preview' ? {
     ok: true, value: {
-      title: '测试', status: 'queued', source: { cwd: 'C:/proj-alpha' },
+      title: '测试', status: 'safe', liveMigration: true, source: { cwd: 'C:/proj-alpha' },
       target: { path: 'C:/proj-beta' }, estimatedBackupBytes: 0,
-      warnings: ['resident writer; restart required']
+      warnings: []
     }
   } : prior(endpoint, payload));
   attach(beta);
   await dragDrop(row, beta, 'session-aaa', { confirm: false });
   const overlay = doc._body.querySelector('.wsm-overlay');
   assert.equal(overlay.querySelector('.wsm-session').textContent, '测试');
-  assert.match(overlay.querySelector('.wsm-preview').textContent, /可能需重启/);
+  assert.doesNotMatch(overlay.querySelector('.wsm-preview').textContent, /可能需重启/);
   assert.doesNotMatch(overlay.querySelector('.wsm-preview').textContent, /进入空闲队列/);
   dispatch({ type: 'click', target: overlay.querySelector('.wsm-ok') });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(moveCalls()[0].payload.sessionTitle, '测试');
+  assert.equal(moveCalls()[0].payload.allowQueue, false);
 });
+
+for (const outcome of ['success', 'render-release', 'navigation-during-release', 'rollback', 'transport-error', 'navigated', 'healthy', 'unloaded']) {
+  test(`migration reconnects the removed current conversation via host navigation: ${outcome}`, async () => {
+    resetDom(); mount();
+    const row = sessionRow('标题保留测试', 'session-aaa');
+    const beta = header('proj-beta');
+    fixture({ rows: [row] });
+    attach(beta);
+    let selected = 'session-aaa';
+    let removed = false;
+    const releaseListeners = new Set();
+    let binding;
+    const navigation = [];
+    const ui = {
+      selection: { getSnapshot: () => ({ sessionId: selected }) },
+      clearMain() {
+        navigation.push('release'); selected = undefined;
+        const release = () => {
+          binding = undefined;
+          if (outcome === 'navigation-during-release') selected = 'session-other';
+          for (const listener of releaseListeners) listener();
+        };
+        if (outcome === 'render-release' || outcome === 'navigation-during-release') setTimeout(release, 0);
+        else release();
+      },
+      openSession(id) {
+        assert.equal(binding, undefined, 'must wait for Provider reference release before retaining again');
+        navigation.push(id); selected = id; removed = false; binding = { session };
+      }
+    };
+    const session = {
+      getSnapshot: () => ({ removed }),
+      async open() { navigation.push('ready'); }
+    };
+    binding = { session };
+    const sessions = { binding: () => binding, retainInfo: () => ({
+      subscribe(listener) { releaseListeners.add(listener); return () => releaseListeners.delete(listener); }
+    }) };
+    ctx.get = (key) => ({ uiWorkspace: ui, sessions })[key];
+    const prior = rpcResponder;
+    setResponder((endpoint, payload) => {
+      if (endpoint !== 'mover.move') return prior(endpoint, payload);
+      removed = outcome !== 'healthy';
+      if (outcome === 'navigated') selected = 'session-other';
+      if (outcome === 'unloaded') unmount();
+      if (outcome === 'transport-error') throw new Error('Connection lost after release');
+      if (outcome === 'rollback') return { ok: false, error: { code: 'move-failed', message: 'rolled back cleanly' } };
+      return prior(endpoint, payload);
+    });
+    await dragDrop(row, beta, 'session-aaa');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(moveCalls().length, 1, 'never repeats the physical migration');
+    if (['navigated', 'healthy', 'unloaded'].includes(outcome)) {
+      assert.deepEqual(navigation, []);
+    } else if (outcome === 'navigation-during-release') {
+      assert.deepEqual(navigation, ['release']);
+      assert.equal(selected, 'session-other');
+    } else {
+      assert.deepEqual(navigation, ['release', 'session-aaa', 'ready']);
+      assert.equal(removed, false, 'new view can accept messages without manually switching');
+    }
+    assert.equal(releaseListeners.size, 0, 'retention observer is released');
+    if (outcome === 'success') {
+      const text = doc._body.querySelector('.wsm-toast')?.textContent;
+      assert.match(text, /重启应用/);
+      assert.doesNotMatch(text, /刷新页面/);
+    }
+    if (outcome === 'rollback') assert.match(doc._body.querySelector('.wsm-toast')?.textContent, /rolled back cleanly/);
+  });
+}
+
+for (const approve of [false, true]) {
+  test(`运行中拖动会话：${approve ? '明确停止后迁移' : '取消不执行'}`, async () => {
+    resetDom(); mount();
+    const row = sessionRow('运行中', 'session-aaa');
+    const beta = header('proj-beta');
+    fixture({ rows: [row] });
+    const prior = rpcResponder;
+    setResponder((endpoint, payload) => endpoint === 'mover.preview' ? { ok: true, value: {
+      status: 'warning', running: true, liveMigration: true, warnings: ['session is running; moving requires explicit stop confirmation']
+    } } : prior(endpoint, payload));
+    attach(beta);
+    await dragDrop(row, beta, 'session-aaa', { confirm: false });
+    const overlay = doc._body.querySelector('.wsm-overlay');
+    assert.equal(overlay.querySelector('.wsm-ok').textContent, '停止任务并迁移');
+    dispatch({ type: 'click', target: overlay.querySelector(approve ? '.wsm-ok' : '.wsm-cancel') });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(moveCalls().length, approve ? 1 : 0);
+    if (approve) assert.equal(moveCalls()[0].payload.stopRunning, true);
+  });
+}
 
 test('兜底映射错配时不得把错配 id 当成真实会话移动（P2 回归）', async () => {
   resetDom();
