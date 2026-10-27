@@ -29,7 +29,7 @@
   </p>
   <p style="font-size: 0; line-height: 1;">
     <img alt="GitHub clones observed（自 2026-08-25 累计，含 unique）" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2FPianoPrince%2Fc14345658550a4a308570acfbaf9d170%2Fraw%2Fwsm-clones-total.json" style="height:20px; margin:0 2px;" />
-    <!-- release-downloads-badge:start --> <img alt="Release downloads" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2FPianoPrince%2Fc14345658550a4a308570acfbaf9d170%2Fraw%2Fwsm-release-downloads.json" style="height:20px; margin:0 2px;" /> <!-- release-downloads-badge:end -->
+    <!-- release-downloads-badge:start --> <!-- release-downloads-badge:end -->
   </p>
 </div>
 
