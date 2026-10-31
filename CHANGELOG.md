@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- The client UI now follows the DSH global language setting through the official `locale` service (`ctx.locale.register` + `ctx.locale.bind`) instead of reading `navigator.language` at module load. Switching the DSH language takes effect without reloading the plugin. Hosts without a `locale` service (older DSH builds) keep the browser-language fallback, and teardown unregisters the `workspace-mover` namespace.
+
 ## [2.4.2] - 2026-10-26
 
 - Reopen the still-selected removed conversation through host navigation after migration or rollback, waiting for the old view's retained references to release before reopening. Do not change a later user selection. Replace the page-refresh hint with a fully-quit-and-restart hint for Desktop.
