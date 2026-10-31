@@ -423,7 +423,20 @@ window.__ModuleLoader__.load({
 				dataCleanedMsg: "✓ Purged {r} recycle entries and {b} backups, freed {size}"
 			}
 		};
-		const lang = (navigator.language || "en").toLowerCase().startsWith("zh") ? "zh" : "en";
+		// —— 语言：优先跟随 DSH 全局语言设置（官方 locale 服务），
+		// 宿主没有 locale 服务（旧版本 / 测试环境）时退回浏览器语言。 ——
+		// 命名空间在官方 locale 注册表里唯一标识本插件的词条。
+		const LOCALE_NS = "workspace-mover";
+		// 浏览器语言只作兜底。不要在模块装载时求值：宿主语言可能晚于插件就绪，
+		// 每次回退重新读 navigator，也便于测试覆盖不同浏览器语言。
+		const browserLang = () => {
+			const tag = String((typeof navigator !== "undefined" && navigator?.language) || "en").toLowerCase();
+			return tag.startsWith("zh") ? "zh" : "en";
+		};
+		// 宿主 locale 服务注册后绑定 ctx.locale.bind(LOCALE_NS)：
+		// LocaleRuntime 的 bind 每次调用都按「当前」语言解析，切换语言无需重载插件；
+		// 未注册的语言（含未来的外部语言包）按官方 fallback 链落到 en。
+		let boundT = null;
 		// 词条漂移防护：新增文案只补一种语言时，缺失的那一侧会静默回退成 key
 		//（界面上直接显示 idUnresolved 这样的标识符）。启动时对账一次并告警。
 		(() => {
@@ -437,10 +450,33 @@ window.__ModuleLoader__.load({
 			}
 		})();
 		const t = (key, vars) => {
-			let s = STRINGS[lang][key] ?? key;
+			if (boundT) {
+				try { return boundT(key, vars); } catch { boundT = null; /* locale 服务已卸载：退回浏览器语言 */ }
+			}
+			let s = STRINGS[browserLang()][key] ?? key;
 			for (const [k, v] of Object.entries(vars ?? {})) s = s.replaceAll(`{${k}}`, String(v));
 			return s;
 		};
+		/**
+		 * 把本插件的 zh/en 词条注册进宿主 locale 命名空间，并绑定官方 t。
+		 * 注册失败（同名命名空间已被上一实例占用等）不抛错：能 bind 就继续用它的词条，
+		 * 否则保持浏览器语言回退——语言能力缺失绝不能影响迁移主流程。
+		 * @param {any} locale 宿主 locale 服务（ctx.locale / ctx.get('locale')）
+		 * @returns {(() => void)|null} 注销注册的函数（若有）
+		 */
+		function attachHostLocale(locale) {
+			if (!locale || typeof locale.register !== "function" || typeof locale.bind !== "function") return null;
+			let dispose = null;
+			try {
+				dispose = locale.register(LOCALE_NS, { zh: STRINGS.zh, en: STRINGS.en });
+			} catch { /* 命名空间已被占用：沿用已注册词条 */ }
+			try {
+				const candidate = locale.bind(LOCALE_NS);
+				// 只有词条真的能解析时才绑定；否则保持浏览器回退，避免界面露出 key。
+				boundT = candidate("confirmTitle") === "confirmTitle" ? null : candidate;
+			} catch { boundT = null; }
+			return typeof dispose === "function" ? dispose : null;
+		}
 		// 桌面版热重载后旧 fiber 上的服务访问会抛 cordis 的 "inactive context"——
 		// 换成可操作的提示文案，而不是让用户面对内部术语。
 		const errMsg = (err) => {
@@ -1999,6 +2035,41 @@ window.__ModuleLoader__.load({
 			// 两份闭包还会互相擦掉对方的多选高亮。
 			const disposers = [];
 			disposers.push(stopAutoscroll);
+
+			// —— 跟随 DSH 全局语言设置（官方 locale 服务） ——
+			// 同步读取已就绪的服务让首次渲染就用对语言；再用 cordis 注入兜住两种时序：
+			// locale 服务晚于本插件注册，或宿主热重载后服务被替换。两条路径共用同一绑定。
+			// 旧宿主没有 locale 服务时保持浏览器语言回退，插件仍完整可用。
+			let localeBound = false;
+			let localeDispose = null;
+			const releaseHostLocale = () => {
+				localeBound = false;
+				boundT = null;
+				if (typeof localeDispose === "function") {
+					try { localeDispose(); } catch { /* 宿主 locale 已卸载 */ }
+				}
+				localeDispose = null;
+			};
+			const useHostLocale = (locale) => {
+				if (localeBound) return;
+				localeBound = true;
+				localeDispose = attachHostLocale(locale);
+			};
+			let readyLocale = null;
+			try { readyLocale = ctx.get?.("locale") ?? null; } catch { readyLocale = null; }
+			if (readyLocale) useHostLocale(readyLocale);
+			if (typeof ctx.inject === "function") {
+				try {
+					ctx.inject(["locale"], (child) => {
+						let locale = null;
+						try { locale = child.get?.("locale") ?? null; } catch { locale = null; }
+						if (locale) useHostLocale(locale);
+						child.effect(() => releaseHostLocale, "workspace-mover: host locale");
+					});
+				} catch { /* 该宿主没有 locale 服务：保留浏览器语言回退 */ }
+			}
+			if (localeBound) disposers.push(releaseHostLocale);
+
 			const listen = (type, fn, options) => {
 				document.addEventListener(type, fn, options);
 				disposers.push(() => document.removeEventListener(type, fn, options));
