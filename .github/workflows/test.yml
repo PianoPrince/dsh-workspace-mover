@@ -10,7 +10,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Pin macOS while the latest image pool is waiting for runner capacity.
+        os: [ubuntu-latest, windows-latest, macos-15]
         node: [22, 24]
     runs-on: ${{ matrix.os }}
     steps:
