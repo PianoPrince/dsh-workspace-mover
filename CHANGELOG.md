@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.4.3] - 2026-11-03
+
+### Changed
+
+- The client UI follows the DSH language through its official optional `locale` service (PR #12, EzraRT). The settings panel updates on locale changes; newly opened dialogs use the current language. An already open confirmation dialog keeps its original text until reopened. Hosts without the service keep the browser-language fallback; teardown removes subscriptions and dictionaries.
+
+### Fixed
+
+- Refresh the public client Session baseline after recycle-bin restoration, backup restoration and unarchiving, so restored cold archives can appear without restarting. Keep successful restoration distinct from a later list-refresh failure. Recycle restoration explicitly reports when the original archived state is preserved.
+- Idle resident sessions with tracked public lifecycle handles can be released and deleted to the recycle bin without restarting. Successful deletion never reloads the removed session, and clears its selected view. Running or untracked resident sessions remain protected (#11).
+- Delete failure reloads only when an archive can still be located. If the manifest write and physical rollback both fail, preserve the relocated files and recovery record instead of deleting the recovery directory.
+- Missing roster entries distinguish archives found elsewhere in the current storage root from unknown locations. Preserve ownership and archived entries; missing files do not prove deletion. Remove the unsupported claim that restarting automatically cleans these records (#11).
+
+### Validation
+
+- Desktop `0.2.1-rc.5`: user accepted `2.4.3-rc.2` deletion, recycle restoration, immediate list/sidebar recovery and continued replies; language switching and migration passed in rc.1. Running-session deletion refusal is covered by automated checks, not the host's separate Stop and archive dialog. See [review and acceptance record](docs/compatibility/issue-11-pr-12-review-2026-11-02.md).
+- Local syntax/tests/package checks: 334 passed, 3 optional runtime checks skipped; installed DSH runtime checks: all 6 passed. Web and older-host manual acceptance remain pending.
+
 ## [2.4.2] - 2026-10-26
 
 - Reopen the still-selected removed conversation through host navigation after migration or rollback, waiting for the old view's retained references to release before reopening. Do not change a later user selection. Replace the page-refresh hint with a fully-quit-and-restart hint for Desktop.

@@ -38,8 +38,61 @@ test('live lifecycle: explicit stop, request exclusion, failure recovery and unl
 	assert.equal(lifecycleFor(ctx, 'a'), null);
 });
 
+test('delete lifecycle: no reload on success, restore after failure only when archive survives', async () => {
+	const entries = new Map();
+	let reloads = 0;
+	let teardown;
+	const agents = {
+		get: (id) => entries.get(id),
+		async resume({ resumeSessionId: id }) {
+			const agent = { id, status: 'idle', session: { header: {} }, send() {} };
+			entries.set(id, agent);
+			return { agent, async dispose() { entries.delete(id); } };
+		}
+	};
+	const ctx = { get: (key) => key === 'agents' ? agents : key === 'sessionController' ? {
+		async resolveAgent(id) { reloads++; return agents.resume({ resumeSessionId: id }); }
+	} : null };
+	installLifecycle(ctx, { agents, effect(fn) { teardown = fn(); } });
+	try {
+		await agents.resume({ resumeSessionId: 'delete' });
+		await withReleasedSession(ctx, 'delete', false, () => 'deleted', { reloadOnSuccess: false });
+		assert.equal(entries.has('delete'), false);
+		assert.equal(reloads, 0, 'never recreate the deleted conversation');
+		await agents.resume({ resumeSessionId: 'rollback' });
+		await assert.rejects(withReleasedSession(ctx, 'rollback', false, () => { throw new Error('rollback complete'); },
+			{ reloadOnSuccess: false, canReload: () => true }), /rollback complete/);
+		assert.equal(reloads, 1);
+		assert.ok(entries.has('rollback'));
+		await assert.rejects(withReleasedSession(ctx, 'rollback', false, () => { throw new Error('archive unavailable'); },
+			{ reloadOnSuccess: false, canReload: () => false }), /archive unavailable/);
+		assert.equal(reloads, 1, 'failed physical rollback must not create a blank session');
+	} finally { teardown(); }
+});
+
 const modules = process.env.DSH_TEST_NODE_MODULES;
 const load = (name) => import(pathToFileURL(join(resolve(modules), '@deepseek-ai', name, 'lib/index.js')).href);
+
+test('installed LocaleRuntime: bind follows locale changes and disposers unregister dictionaries',
+	{ skip: !modules }, () => {
+	const file = join(resolve(modules), '@deepseek-ai/dsh-client-locale/lib/client.js');
+	let exported;
+	runInNewContext(readFileSync(file, 'utf8'), {
+		window: { __ModuleLoader__: { load({ factory }) { exported = factory(() => ({})); } } },
+		navigator: { language: 'zh-CN', languages: ['zh-CN'] }, console
+	});
+	const locale = new exported.LocaleRuntime({ emit() {} }, undefined, { languages: ['en'], preference: 'en' });
+	const stop = locale.register('test-mover', { en: { title: 'Move {n}' }, zh: { title: '移动 {n}' } });
+	const t = locale.bind('test-mover');
+	assert.equal(t('title', { n: 2 }), 'Move 2');
+	let changed = 0;
+	const unsubscribe = locale.subscribe(() => changed++);
+	locale.setLocale('zh');
+	assert.equal(t('title', { n: 2 }), '移动 2');
+	assert.equal(changed, 1);
+	unsubscribe(); stop();
+	assert.equal(t('title'), 'title');
+});
 
 test('installed client Controller: a Provider reference keeps the removed generation alive until released',
 	{ skip: !modules, timeout: 10000 }, async () => {
@@ -70,7 +123,11 @@ test('installed client Controller: a Provider reference keeps the removed genera
 	} } }, console, AbortController, AbortSignal, queueMicrotask, setTimeout, clearTimeout });
 	const root = new cordis.Context();
 	try {
-		const client = new exports.__ClientSessions(root, {});
+		let listed = [];
+		let listCalls = 0;
+		const client = new exports.__ClientSessions(root, { session: {
+			async list() { listCalls++; return { ok: true, value: { items: listed } }; }
+		} });
 		const id = 'session-retained-view';
 		const summary = { sessionId: id, blank: false, running: false, agentAvailable: true, updatedAt: 1 };
 		client.handleSessionAdded(summary);
@@ -94,6 +151,15 @@ test('installed client Controller: a Provider reference keeps the removed genera
 		assert.notEqual(fresh.binding, previous);
 		assert.equal(fresh.binding.session.getSnapshot().removed, false);
 		fresh.release();
+		client.handleSessionRemoved(id);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(client.list.getSnapshot().ids.includes(id), false);
+		listed = [summary];
+		await client.refresh();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(listCalls, 1);
+		assert.equal(client.list.getSnapshot().ids.includes(id), true,
+			'public refresh restores cold archive metadata without an Agent-created event or restart');
 	} finally {
 		await root.fiber.dispose();
 	}
@@ -174,7 +240,11 @@ test('installed DSH AgentLoop: dispose writer, physical move, resume same sessio
 		off();
 		const again = lifecycleFor(root, id).handle;
 		assert.equal(again.agent.session.header.cwd, a);
-		await again.dispose();
+		const deleted = await mover.deleteSessionToTrash(root, { sessionId: id });
+		assert.equal(deleted.deleted, true);
+		assert.equal(agents.get(id), undefined, 'deleted Agent is not reloaded');
+		assert.equal(root.get('sessions').get(id), undefined, 'real Session writer is released');
+		assert.equal(lifecycleFor(root, id), null);
 	} finally {
 		await root.fiber.dispose();
 		if (prior === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = prior;

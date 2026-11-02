@@ -931,7 +931,7 @@ test('mover.scan 分类 orphaned / unregistered / ok，并检出幽灵记账', a
   assert.equal(byId['session-unreg'].status, 'unregistered');
   assert.equal(byId['session-unreg'].targetWorkspaceId, 'wid-a');
   assert.equal(byId['session-orphan'].status, 'orphaned');
-  assert.deepEqual(res.value.ghosts, [{ workspaceId: 'wid-b', sessionId: 'session-ghost' }]);
+  assert.deepEqual(res.value.ghosts, [{ workspaceId: 'wid-b', sessionId: 'session-ghost', locations: [], status: 'location-unknown', archived: false }]);
   assert.equal(res.value.scanned, 3);
 });
 
@@ -1935,6 +1935,40 @@ test('mover.session.delete：manifest 写失败时原样搬回，状态零变化
   assert.ok(!existsSync(recycle) || readdirSync(recycle).length === 0, 'no invisible recycle entries');
 });
 
+test('delete failed rollback preserves relocated archive for recovery instead of removing it', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  const source = artifactPath(root, A, 'session-aaa');
+  const bytes = readFileSync(source);
+  // A successful relocation followed by a new destination file blocks move-back.
+  await assert.rejects(deleteSessionToTrash(ctx, { sessionId: 'session-aaa' }, {
+    writeManifestImpl() {
+      mkdirSync(dirname(source), { recursive: true });
+      writeFileSync(source, 'concurrent destination');
+      throw new Error('manifest disk failure');
+    }
+  }), /rollback failed; session files preserved/);
+  const recycle = join(root, 'workspace-mover', 'recycle');
+  const entry = readdirSync(recycle)[0];
+  assert.deepEqual(readFileSync(join(recycle, entry, 'session', source.split(/[\\/]/).at(-1))), bytes);
+  assert.deepEqual(entityA.record.sessionIds, ['session-aaa']);
+});
+
+test('scan distinguishes misplaced membership from unknown archive location without detaching', async () => {
+  apply(ctx);
+  entityB.record.sessionIds.push('session-aaa', 'session-missing');
+  ctx.workspaceRegistry.archivedSessionIds = ['session-missing'];
+  const res = await call('mover.scan');
+  assert.equal(res.ok, true);
+  const found = res.value.ghosts.find((g) => g.sessionId === 'session-aaa');
+  assert.equal(found.status, 'found-elsewhere');
+  assert.deepEqual(found.locations, [artifactPath(root, A, 'session-aaa')]);
+  const unknown = res.value.ghosts.find((g) => g.sessionId === 'session-missing');
+  assert.equal(unknown.status, 'location-unknown');
+  assert.equal(unknown.archived, true);
+  assert.deepEqual(entityB.record.sessionIds, ['session-aaa', 'session-missing']);
+});
+
 test('mover.session.delete：归档会话删除时同步移出归档集', async () => {
   apply(ctx);
   sharedIndex.sessionPaths.set('session-aaa', A);
@@ -1962,6 +1996,7 @@ test('mover.trash.restore：还原到原路径并回写记账、投影标题、�
   const res = await call('mover.trash.restore', { sessionId: 'session-aaa' });
   assert.equal(res.ok, true, JSON.stringify(res));
   assert.equal(res.value.workspaceId, 'wid-a');
+  assert.equal(res.value.archived, true, 'recycle restore explicitly reports preserved archived visibility');
   assert.ok(existsSync(artifactPath(root, A, 'session-aaa')), 'artifact back at A');
   assert.equal(readHeader(readFileSync(artifactPath(root, A, 'session-aaa'))).cwd, A);
   assert.deepEqual(entityA.record.sessionIds, ['session-aaa'], 're-attached to A');
