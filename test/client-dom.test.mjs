@@ -493,6 +493,104 @@ test('模块导出 apply / inject，且 apply 不抛错', () => {
   assert.deepEqual(mod.inject, ['connection', 'slots']);
 });
 
+test('locale service wins over browser language, switches live and releases registrations', async () => {
+  resetDom();
+  let language = 'en';
+  let dicts;
+  let unregisters = 0;
+  const listeners = new Set();
+  const locale = {
+    register(ns, values) {
+      assert.equal(ns, 'workspace-mover'); dicts = values;
+      return () => { unregisters++; };
+    },
+    bind() { return (key) => dicts[language][key] ?? key; },
+    subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
+  };
+  ctx = makeCtx();
+  ctx.get = (key) => key === 'locale' ? locale : undefined;
+  mod.apply(ctx);
+  const row = sessionRow('Locale test', 'session-aaa');
+  const beta = header('proj-beta');
+  fixture({ rows: [row] }); attach(beta);
+  await dragDrop(row, beta, 'session-aaa', { confirm: false });
+  assert.equal(doc._body.querySelector('.wsm-title').textContent, 'Move session across workspaces');
+  dispatch({ type: 'click', target: doc._body.querySelector('.wsm-cancel') });
+  language = 'zh'; for (const fn of listeners) fn();
+  await dragDrop(row, beta, 'session-aaa', { confirm: false });
+  assert.equal(doc._body.querySelector('.wsm-title').textContent, '跨工作区移动会话');
+  dispatch({ type: 'click', target: doc._body.querySelector('.wsm-cancel') });
+  unmount();
+  assert.equal(unregisters, 1);
+  assert.equal(listeners.size, 0);
+});
+
+test('late locale service is disposed even when unavailable at initial mount', () => {
+  resetDom();
+  ctx = makeCtx();
+  let arrive;
+  ctx.inject = (keys, callback) => { assert.deepEqual(keys, ['locale']); arrive = callback; };
+  mod.apply(ctx);
+  let disposed = 0;
+  const locale = { register: () => () => disposed++, bind: () => () => 'translated' };
+  arrive({ get: () => locale, effect(fn) { effects.push(fn()); } });
+  unmount();
+  assert.equal(disposed, 1);
+});
+
+test('deleting selected conversation clears its view without reopening; later selection is preserved', async () => {
+  for (const navigate of [false, true]) {
+    resetDom();
+    ctx = makeCtx();
+    let selected = 'session-delete';
+    let cleared = 0;
+    let rpc;
+    const ui = {
+      selection: { getSnapshot: () => ({ sessionId: selected }) },
+      clearMain() { selected = null; cleared++; },
+      openSession() { assert.fail('must not reload deleted conversation'); }
+    };
+    ctx.get = (key) => key === 'uiWorkspace' ? ui : undefined;
+    ctx.slots = {
+      inject(_name, fn) { fn(); },
+      register(options) { rpc = options.inject().rpcCall; }
+    };
+    ctx.connection.rpc.call = async () => {
+      if (navigate) selected = 'session-other';
+      return { ok: true, value: { deleted: true } };
+    };
+    mod.apply(ctx);
+    await rpc('mover.session.delete', { sessionId: 'session-delete' });
+    assert.equal(cleared, navigate ? 0 : 1);
+    assert.equal(selected, navigate ? 'session-other' : null);
+  }
+});
+
+test('restore refreshes the real session baseline once; refresh failure never repeats file restoration', async () => {
+  for (const endpoint of ['mover.trash.restore', 'mover.backups.restore', 'mover.unarchive']) {
+    for (const brokenRefresh of [false, true]) {
+      resetDom();
+      ctx = makeCtx();
+      let rpc;
+      const actions = [];
+      ctx.slots = { inject(_name, fn) { fn(); }, register(options) { rpc = options.inject().rpcCall; } };
+      ctx.get = (key) => key === 'sessions' ? {
+        async refresh() { actions.push('refresh'); if (brokenRefresh) throw new Error('list unavailable'); }
+      } : undefined;
+      ctx.connection.rpc.call = async (_channel, method) => {
+        actions.push(method);
+        return { ok: true, value: { restored: true } };
+      };
+      mod.apply(ctx);
+      actions.length = 0; // discard the initial status probe
+      const result = await rpc(endpoint, { sessionId: 'session-restored' });
+      assert.equal(result.ok, true, 'do not label completed restore as failed');
+      assert.deepEqual(actions, [endpoint, 'refresh']);
+      if (brokenRefresh) assert.match(doc._body.querySelector('.wsm-toast')?.textContent, /无需重复还原/);
+    }
+  }
+});
+
 test('热重载：卸载再装载不得让 document 监听器净增长（teardown 回归）', () => {
   resetDom();
   mount();

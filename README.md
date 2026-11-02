@@ -1,7 +1,7 @@
 # dsh-workspace-mover
 
 
-当前版本：**2.4.2**。已通过 DSH Desktop `0.2.1-rc.2` 人工验收，详见[即时迁移与标题修复验收记录](docs/compatibility/immediate-migration-2026-10-26.md)。
+当前版本：**2.4.3**。已通过 DSH Desktop `0.2.1-rc.5` 删除、还原、即时显示、继续发送及语言切换验收，详见[2.4.3 验收与 PR 审查记录](docs/compatibility/issue-11-pr-12-review-2026-11-02.md)。
 
 支持即时迁移的会话：空闲时释放写入句柄、实际搬移并重新加载；运行中可取消，或明确选择「停止任务并迁移」。迁移保留标题和历史。安装或热更新后请彻底重启 DSH 一次，以接入会话生命周期；无法安全释放的会话会明确阻止拖动迁移。旧队列仍保留恢复与取消入口。后端验证与实际验收结果见 [即时迁移记录](docs/compatibility/immediate-migration-2026-10-26.md)。
 > [!IMPORTANT]
@@ -14,8 +14,8 @@
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm 最近 30 天下载量" src="https://img.shields.io/npm/dm/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.4.2-4d6bfe" style="height:20px; margin:0 2px;" />
-    <img alt="DSH tested 0.2.1-rc.2" src="https://img.shields.io/badge/DSH_tested-0.2.1--rc.2-4c8dff" style="height:20px; margin:0 2px;" />
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.4.3-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="DSH tested 0.2.1-rc.5" src="https://img.shields.io/badge/DSH_tested-0.2.1--rc.5-4c8dff" style="height:20px; margin:0 2px;" />
     <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
   </p>
   <p style="font-size: 0; line-height: 1;">
@@ -236,6 +236,7 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 
 | 插件版本 | 已验证 DeepSeek Harness | Node | 备注 |
 |----------|-------------------------|------|------|
+| 2.4.3 | `0.2.1-rc.5` Desktop | `≥22` | 用户确认驻留会话删除、回收站还原、即时显示、继续发送、语言切换及迁移；运行中拒绝删除由自动测试覆盖 |
 | 2.4.2 | `0.2.1-rc.2` Desktop | `≥22` | 用户确认即时迁移、当前界面继续发送、运行中取消/停止迁移、标题保留及重启恢复 |
 | 2.4.0 | `0.2.1-rc.2` Desktop | `≥22` | 用户确认排队、迁移前后继续发送、两次重启、目标工作目录和工作区工具审批；自动滚动仅自动检查 |
 | 2.3.0 | `0.2.0-rc.2` Desktop（用户验证部分场景） | `≥22` | 空闲会话迁移与快照复用已反馈通过；Web、队列进程重启和完整 runtime smoke 待验证 |
@@ -283,7 +284,7 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 - **失败时恢复到移动前状态**（文件与记账一并恢复）；
 - **删除先进回收站**，可还原到原位置或任意分组；彻底删除需二次确认；
 - **无法自动恢复时**，会在救援面板明确标出，需要人工确认；会话文件与备份始终保留；
-- **近期打开过、仍驻留在 Harness 内存中的会话**不能直接删除，需重启 Harness 后再删（界面会给出明确提示）。
+- **空闲且已被插件跟踪的驻留会话**可安全释放后删除；运行中的会话仍拒绝删除。插件加载前打开、未捕获生命周期句柄的驻留会话，需要彻底退出并重启 Harness 后重试。
 
 > 失败路径优先保数据，不静默丢会话。<br>
 > 并非「任何错误都能自动恢复」：极端情况下会要求人工处理，但数据会留在原处。
@@ -291,7 +292,7 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 ## ⚠️ 已知限制
 
 - 不支持把会话移入「Ungrouped」桶；
-- 常驻内存的会话（近期打开过）不能直接删除，请重启 Harness 后再删；
+- 未被插件跟踪到生命周期句柄的驻留会话不能安全释放，请重启 Harness 后再删；
 - 若第三方插件整页重绘侧边栏，本插件可能暂时无法识别会话行（功能触发不了，**不损坏数据**）；批量拖拽时无法确认身份的行会被跳过并明确告知，不会猜一个 id 去移动；
 - 「扁平列表」视图无工作区标题行，本插件在该视图不激活；
 - 宿主大版本升级若改变内部结构，相关能力可能降级或需重启后生效；搬家向导在无法安全写入时会在改动任何文件之前中止并提示；
@@ -313,6 +314,13 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 取值非法或越界时回退默认值——配置写错不会让功能失效。
 
 ## 🆕 最近版本
+
+### v2.4.3 · 2026-11-03
+
+- 空闲且已跟踪的驻留会话可安全删除，无需先重启；运行中或未跟踪的会话仍受保护。
+- 回收站还原、备份恢复和取消归档后刷新会话列表。归档后删除的会话还原时仍保留归档状态，按提示取消归档即可回到侧栏。
+- 界面跟随 DSH 中英文设置（感谢 PR #12 的 EzraRT），旧宿主保留浏览器语言回退；幽灵记录区分档案位于别处或位置未知，不自动清除归属。
+- Desktop `0.2.1-rc.5` 已验收；完整说明见 [CHANGELOG](CHANGELOG.md) 和[验收记录](docs/compatibility/issue-11-pr-12-review-2026-11-02.md)。
 
 ### v2.4.2 · 2026-10-26
 

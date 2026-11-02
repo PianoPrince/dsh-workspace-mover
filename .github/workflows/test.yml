@@ -10,7 +10,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Use the macOS Intel pool while the ARM image pools await runner capacity.
+        os: [ubuntu-latest, windows-latest, macos-15-intel]
         node: [22, 24]
     runs-on: ${{ matrix.os }}
     steps:

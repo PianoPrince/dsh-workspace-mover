@@ -1,7 +1,7 @@
 # dsh-workspace-mover
 
 
-Current version: **2.4.2**. Accepted on DSH Desktop `0.2.1-rc.2`. Tracked idle sessions release their writer, physically move and reload. Running tasks require explicit Stop task and move confirmation. Restart DSH once after installing/updating to capture lifecycle handles. Untracked writers block immediate drag migration; old durable queues remain inspectable and cancellable. See the [migration and title-fix acceptance record](docs/compatibility/immediate-migration-2026-10-26.md).
+Current version: **2.4.3**. Accepted on DSH Desktop `0.2.1-rc.5`: deletion, restoration, immediate list visibility, continued replies, language switching and migration. Restart DSH once after installing/updating to capture lifecycle handles. See the [2.4.3 acceptance and contribution review](docs/compatibility/issue-11-pr-12-review-2026-11-02.md).
 > [!IMPORTANT]
 > Unofficial project, independently developed and maintained by community members.
 
@@ -13,8 +13,8 @@ Current version: **2.4.2**. Accepted on DSH Desktop `0.2.1-rc.2`. Tracked idle s
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm downloads in the last 30 days" src="https://img.shields.io/npm/dm/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.4.2-4d6bfe" style="height:20px; margin:0 2px;" />
-    <img alt="DSH tested 0.2.1-rc.2" src="https://img.shields.io/badge/DSH_tested-0.2.1--rc.2-4c8dff" style="height:20px; margin:0 2px;" />
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.4.3-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="DSH tested 0.2.1-rc.5" src="https://img.shields.io/badge/DSH_tested-0.2.1--rc.5-4c8dff" style="height:20px; margin:0 2px;" />
     <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
   </p>
   <p style="font-size: 0; line-height: 1;">
@@ -237,6 +237,7 @@ Recovery snapshots are separate from primary archives. A reused snapshot retains
 
 | Plugin version | Verified DeepSeek Harness | Node | Notes |
 |----------------|---------------------------|------|-------|
+| 2.4.3 | `0.2.1-rc.5` Desktop | `≥22` | User accepted resident deletion, recycle restoration, immediate visibility, continued replies, language switching and migration; running deletion refusal covered by automated checks |
 | 2.4.2 | `0.2.1-rc.2` Desktop | `≥22` | User accepted immediate migration, continued replies in the same view, cancel/stop-and-move, titles and restart recovery |
 | 2.4.0 | `0.2.1-rc.2` Desktop | `≥22` | User accepted queueing, continued replies, two restarts, target cwd and workspace-tool approval; autoscroll automated checks only |
 | 2.3.0 | `0.2.0-rc.2` Desktop (partial user verification) | `≥22` | Idle migration and snapshot reuse confirmed; Web, queue process restart, and full runtime smoke pending |
@@ -285,7 +286,7 @@ Every migration runs through the same safety-bounded pipeline: **byte-level back
 - **On failure, restore to the pre-move state** (files and bookkeeping together);
 - **Deletes go to the recycle bin first** and can be restored to the original spot or any group; permanent delete needs a second confirmation;
 - **If automatic recovery is not possible**, the rescue panel flags it for manual review; session files and backups are kept;
-- **Recently opened sessions still resident in Harness memory** cannot be deleted until you restart Harness (the UI says so clearly).
+- **Idle resident sessions tracked by the plugin** can be safely released and deleted. Running sessions are refused. Resident sessions opened before lifecycle tracking began require a full Harness restart before retrying deletion.
 
 > Failure paths prefer keeping your data — sessions are never silently dropped.<br>
 > This is **not** a claim that every error auto-recovers: extreme cases need manual action, with data left in place.
@@ -293,12 +294,19 @@ Every migration runs through the same safety-bounded pipeline: **byte-level back
 ## ⚠️ Known limitations
 
 - Moving into the "Ungrouped" bucket is not supported;
-- Sessions still resident in Harness memory (opened recently) cannot be deleted until you restart Harness;
+- Resident sessions without a captured lifecycle handle require a Harness restart before deletion;
 - If a third-party plugin fully redraws the sidebar, features may stop triggering (**no data damage**);
 - Flat list view has no workspace title rows — the plugin stays inactive there;
 - Major host upgrades that change internal structures may degrade some actions or require a restart; the move-home wizard aborts before touching files if it cannot write safely.
 
 ## 🆕 Recent version
+
+### v2.4.3 · 2026-11-03
+
+- Safely delete tracked idle resident conversations without restarting. Running and untracked sessions remain protected.
+- Refresh the Session baseline after recycle/backup restoration and unarchiving. Recycle restoration preserves the original archived state and explains how to return to the sidebar.
+- Follow DSH language settings (thanks to EzraRT, PR #12), retaining browser fallback on older hosts. Distinguish archives found elsewhere from unknown ghost locations without deleting ownership records.
+- Accepted on Desktop `0.2.1-rc.5`; see [CHANGELOG](CHANGELOG.md) and the [acceptance record](docs/compatibility/issue-11-pr-12-review-2026-11-02.md).
 
 ### v2.4.2 · 2026-10-26
 

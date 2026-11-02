@@ -57,7 +57,9 @@ window.__ModuleLoader__.load({
 				layoutUnknown: "存储布局未知",
 				corruptData: "档案数据损坏或无法解析",
 				ghostsTitle: "名单里有、但文件已不在的记录",
-				ghostsHelp: "侧边栏的分组名单里记着这些会话，但对应的记录文件已经不在磁盘上（通常是被手动删除的）。一般不影响使用；重启 Harness 后通常会自动清理。",
+				ghostFound: "当前存储根的其他位置找到档案",
+				ghostUnknown: "档案位置未知（不代表已删除）",
+				ghostsHelp: "这些会话在分组记账指定的位置缺少档案，可能已被外部工具搬走。不能据此认定文件已删除，重启也不保证清理；本插件保留归属记录，不会自动清账。",
 				helpPath: "会话原来的文件夹被移动、改名或删除，所以侧边栏看不到它。选择一个分组，历史会原样迁移过去，会话 ID 保持不变。",
 				helpUnreg: "会话文件完好，只是还没有归属到任何工作区分组。点击按钮即可归入匹配的分组，文件不会移动。",
 				pickTarget: "请先在下拉框选择要移入的分组",
@@ -109,6 +111,8 @@ window.__ModuleLoader__.load({
 				restoreToBtn: "恢复到…",
 				restorePickTitle: "把「{title}」恢复到…",
 				restoreDone: "✓ 已恢复到「{ws}」",
+				trashRestoredArchived: "✓ 已从回收站还原至「{ws}」，仍为已归档状态；请在“已归档会话”中点“恢复”，返回侧栏。",
+				restoreRefreshFailed: "还原已完成，但会话列表刷新失败。请彻底退出并重启应用；无需重复还原。",
 				ownerGoneBadge: "原分组已删除",
 				emptyWsCaption: "空分组",
 				emptyWsHelp: "这些分组名下一个会话都没有（归档的、名单里的幽灵记录都算成员，绝不会误报）。删除只移除分组登记，不影响任何会话。",
@@ -142,7 +146,7 @@ window.__ModuleLoader__.load({
 				backupOrphanCleanup: "清理孤儿备份",
 				backupOrphanConfirm: "删除 {n} 组孤儿备份（{size}）？这些会话已不存在，删除后无法从备份恢复。",
 				backupOrphanPartial: "✓ 已删除 {n} 份，{f} 组失败（可重试）",
-				residentRefuse: "该会话当前没有焦点也可能仍驻留在 Harness 内存中（归档只隐藏，不会卸载）。DSH 0.1.5 没有公开的按 ID 卸载接口，请重启 Harness 释放常驻会话后再删除。",
+				residentRefuse: "该会话仍驻留内存，但插件未捕获到它的生命周期句柄，无法安全释放。请彻底退出并重启 Harness 后重试删除。归档只会隐藏会话，不会释放句柄。",
 				sessionBusy: "该会话正在处理中（可能有迁移 / 还原 / 删除操作尚未完成），请稍后再试。",
 				contextStale: "插件上下文已失效（客户端热重载导致）。请刷新页面（或重启应用）后重试，功能会自动恢复。",
 				recoveryNote: "检测到 {n} 条自动回滚也失败的记录，需人工确认：会话文件与备份均保留在原处，未丢失。请勿手动清理 pluginData 目录，查看 recovery.json 或联系开发者处理。",
@@ -260,7 +264,9 @@ window.__ModuleLoader__.load({
 				layoutUnknown: "Unknown storage layout",
 				corruptData: "Archive data is damaged or cannot be parsed",
 				ghostsTitle: "Listed in groups but missing on disk",
-				ghostsHelp: "These sessions are still recorded in group rosters, but their files are gone from disk (usually deleted by hand). Harmless in general; a harness restart normally cleans them up.",
+				ghostFound: "Archive found elsewhere in the current storage root",
+				ghostUnknown: "Archive location unknown (not proof of deletion)",
+				ghostsHelp: "Archives are missing at the locations recorded by these groups; external tools may have moved them. This does not prove deletion, and restarting does not guarantee cleanup. Ownership records are preserved without automatic removal.",
 				helpPath: "The folder this session lived in was moved, renamed or deleted, so the sidebar cannot show it. Pick a group — history moves over as-is and the session ID stays the same.",
 				helpUnreg: "The session file is fine but no workspace claims it yet. Click to file it into the matching group; files are not moved.",
 				pickTarget: "Pick a target group in the dropdown first",
@@ -312,6 +318,8 @@ window.__ModuleLoader__.load({
 				restoreToBtn: "Restore to…",
 				restorePickTitle: "Restore \"{title}\" to…",
 				restoreDone: "✓ Restored to \"{ws}\"",
+				trashRestoredArchived: "✓ Recovered from the recycle bin to \"{ws}\", still archived. Click Restore under Archived sessions to return it to the sidebar.",
+				restoreRefreshFailed: "Restoration completed, but the session list could not refresh. Fully quit and restart the app; do not repeat the restoration.",
 				ownerGoneBadge: "Original group deleted",
 				emptyWsCaption: "Empty groups",
 				emptyWsHelp: "These groups hold no sessions at all (archived ones and ghost roster entries count as members, so this never misreports). Deleting only removes the group registration; no session is touched.",
@@ -345,7 +353,7 @@ window.__ModuleLoader__.load({
 				backupOrphanCleanup: "Clean orphan backups",
 				backupOrphanConfirm: "Delete {n} orphan backup group(s) ({size})? Those sessions no longer exist, so they cannot be restored from these backups afterwards.",
 				backupOrphanPartial: "✓ Deleted {n}; {f} group(s) failed (retry available)",
-				residentRefuse: "This session may remain resident in harness memory even when it is not focused (archiving hides it but does not unload it). DSH 0.1.5 exposes no public unload-by-ID API; restart the harness to release it, then delete it again.",
+				residentRefuse: "This session is resident, but the plugin did not capture its lifecycle handle and cannot safely release it. Fully quit and restart Harness, then retry deletion. Archiving only hides a session; it does not release its handle.",
 				sessionBusy: "This session is busy: a move / restore / delete is still in flight. Try again in a moment.",
 				contextStale: "The plugin context went stale (client-side hot reload). Refresh the page (or restart the app) and the features will work again.",
 				recoveryNote: "{n} record(s) need manual recovery: automatic rollback also failed. Session files and backups are all kept in place — nothing was lost. Do not clean the pluginData directory by hand; inspect recovery.json or contact the developer.",
@@ -423,7 +431,22 @@ window.__ModuleLoader__.load({
 				dataCleanedMsg: "✓ Purged {r} recycle entries and {b} backups, freed {size}"
 			}
 		};
-		const lang = (navigator.language || "en").toLowerCase().startsWith("zh") ? "zh" : "en";
+		// —— 语言：优先跟随 DSH 全局语言设置（官方 locale 服务），
+		// 宿主没有 locale 服务（旧版本 / 测试环境）时退回浏览器语言。 ——
+		// 命名空间在官方 locale 注册表里唯一标识本插件的词条。
+		const LOCALE_NS = "workspace-mover";
+		// 浏览器语言只作兜底。不要在模块装载时求值：宿主语言可能晚于插件就绪，
+		// 每次回退重新读 navigator，也便于测试覆盖不同浏览器语言。
+		const browserLang = () => {
+			const tag = String((typeof navigator !== "undefined" && navigator?.language) || "en").toLowerCase();
+			return tag.startsWith("zh") ? "zh" : "en";
+		};
+		// 宿主 locale 服务注册后绑定 ctx.locale.bind(LOCALE_NS)：
+		// LocaleRuntime 的 bind 每次调用都按「当前」语言解析，切换语言无需重载插件；
+		// 未注册的语言（含未来的外部语言包）按官方 fallback 链落到 en。
+		let boundT = null;
+		const localeListeners = new Set();
+		const notifyLocale = () => { for (const listener of localeListeners) listener(); };
 		// 词条漂移防护：新增文案只补一种语言时，缺失的那一侧会静默回退成 key
 		//（界面上直接显示 idUnresolved 这样的标识符）。启动时对账一次并告警。
 		(() => {
@@ -437,10 +460,33 @@ window.__ModuleLoader__.load({
 			}
 		})();
 		const t = (key, vars) => {
-			let s = STRINGS[lang][key] ?? key;
+			if (boundT) {
+				try { return boundT(key, vars); } catch { boundT = null; /* locale 服务已卸载：退回浏览器语言 */ }
+			}
+			let s = STRINGS[browserLang()][key] ?? key;
 			for (const [k, v] of Object.entries(vars ?? {})) s = s.replaceAll(`{${k}}`, String(v));
 			return s;
 		};
+		/**
+		 * 把本插件的 zh/en 词条注册进宿主 locale 命名空间，并绑定官方 t。
+		 * 注册失败（同名命名空间已被上一实例占用等）不抛错：能 bind 就继续用它的词条，
+		 * 否则保持浏览器语言回退——语言能力缺失绝不能影响迁移主流程。
+		 * @param {any} locale 宿主 locale 服务（ctx.locale / ctx.get('locale')）
+		 * @returns {(() => void)|null} 注销注册的函数（若有）
+		 */
+		function attachHostLocale(locale) {
+			if (!locale || typeof locale.register !== "function" || typeof locale.bind !== "function") return null;
+			let dispose = null;
+			try {
+				dispose = locale.register(LOCALE_NS, { zh: STRINGS.zh, en: STRINGS.en });
+			} catch { /* 命名空间已被占用：沿用已注册词条 */ }
+			try {
+				const candidate = locale.bind(LOCALE_NS);
+				// 只有词条真的能解析时才绑定；否则保持浏览器回退，避免界面露出 key。
+				boundT = candidate("confirmTitle") === "confirmTitle" ? null : candidate;
+			} catch { boundT = null; }
+			return typeof dispose === "function" ? dispose : null;
+		}
 		// 桌面版热重载后旧 fiber 上的服务访问会抛 cordis 的 "inactive context"——
 		// 换成可操作的提示文案，而不是让用户面对内部术语。
 		const errMsg = (err) => {
@@ -948,6 +994,12 @@ window.__ModuleLoader__.load({
 		}
 
 		function RescuePanel({ rpcCall, ctx }) {
+			const [, setLocaleRevision] = useState(0);
+			useEffect(() => {
+				const update = () => setLocaleRevision((value) => value + 1);
+				localeListeners.add(update);
+				return () => localeListeners.delete(update);
+			}, []);
 			const [scan, setScan] = useState(null);
 			const [workspaces, setWorkspaces] = useState([]);
 			const [audit, setAudit] = useState(null);
@@ -1268,7 +1320,7 @@ window.__ModuleLoader__.load({
 				try {
 					const res = await call("mover.trash.restore", { sessionId: item.sessionId });
 					const wsTitle = workspaces.find((w) => w.workspaceId === res?.workspaceId)?.title ?? res?.workspaceId ?? "";
-					setNote(t("restoreDone", { ws: wsTitle }));
+					setNote(t(res?.archived ? "trashRestoredArchived" : "restoreDone", { ws: wsTitle }));
 					if (res?.workspaceId) scheduleRecencyFix(ctx, res.workspaceId, [item.sessionId]);
 					refreshWorkspaces();
 					await runScan();
@@ -1287,7 +1339,7 @@ window.__ModuleLoader__.load({
 					try {
 						const res2 = await call("mover.trash.restore", { sessionId: item.sessionId, targetWorkspaceId: targetId });
 						const wsTitle = workspaces.find((w) => w.workspaceId === res2?.workspaceId)?.title ?? res2?.workspaceId ?? "";
-						setNote(t("restoreDone", { ws: wsTitle }));
+						setNote(t(res2?.archived ? "trashRestoredArchived" : "restoreDone", { ws: wsTitle }));
 						if (res2?.workspaceId) scheduleRecencyFix(ctx, res2.workspaceId, [item.sessionId]);
 						refreshWorkspaces();
 						await runScan();
@@ -1307,7 +1359,7 @@ window.__ModuleLoader__.load({
 				try {
 					const res = await call("mover.trash.restore", { sessionId: item.sessionId, targetWorkspaceId: targetId });
 					const wsTitle = workspaces.find((w) => w.workspaceId === res?.workspaceId)?.title ?? res?.workspaceId ?? "";
-					setNote(t("restoreDone", { ws: wsTitle }));
+					setNote(t(res?.archived ? "trashRestoredArchived" : "restoreDone", { ws: wsTitle }));
 					if (res?.workspaceId) scheduleRecencyFix(ctx, res.workspaceId, [item.sessionId]);
 					refreshWorkspaces();
 					await runScan();
@@ -1837,7 +1889,8 @@ window.__ModuleLoader__.load({
 					h("div", { className: "wsm-list" },
 						scan.ghosts.slice(0, 20).map((g) => h("div", { className: "wsm-item", key: `${g.workspaceId}/${g.sessionId}` },
 							h("span", { className: "wsm-badge" }, g.workspaceId.slice(0, 8)),
-							h("span", { className: "wsm-mono" }, shortId(g.sessionId))
+							h("span", { className: "wsm-mono" }, shortId(g.sessionId)),
+							h("span", { title: (g.locations ?? []).join("\n") }, t(g.status === "found-elsewhere" ? "ghostFound" : "ghostUnknown"))
 						))
 					)
 				) : null,
@@ -1908,14 +1961,33 @@ window.__ModuleLoader__.load({
 					try { connection = ctx.connection; } catch { /* 仍然失活：走下面的友好报错 */ }
 				}
 				if (!connection) throw new Error(t("contextStale"));
+				const deleting = endpoint === 'mover.session.delete';
 				const migrating = endpoint === 'mover.move' || endpoint === 'mover.moveMany';
 				let ui, currentId;
 				try {
-					ui = migrating ? ctx.get?.('uiWorkspace') : null;
+					ui = migrating || deleting ? ctx.get?.('uiWorkspace') : null;
 					currentId = ui?.selection?.getSnapshot?.()?.sessionId;
 				} catch { /* Optional view service may already be unloading. */ }
+				let response;
 				try {
-					return await connection.rpc.call(CHANNEL, endpoint, payload ?? {});
+					response = await connection.rpc.call(CHANNEL, endpoint, payload ?? {});
+					if (response?.ok && ['mover.trash.restore', 'mover.backups.restore', 'mover.unarchive'].includes(endpoint)) {
+						// Restoring files does not emit session/created. Workspace refresh
+						// alone cannot repopulate the separate client Session baseline.
+						try {
+							const sessions = ctx.get?.('sessions');
+							if (typeof sessions?.refresh === 'function') await sessions.refresh();
+						} catch (error) {
+							console.warn('[workspace-mover] restored session list refresh failed:', error);
+							if (active) toast(t('restoreRefreshFailed'), true);
+						}
+					}
+					if (deleting && response?.ok && String(payload?.sessionId) === String(currentId)
+						&& ui?.selection?.getSnapshot?.()?.sessionId === currentId) {
+						ui.clearMain?.();
+						currentId = null;
+					}
+					return response;
 				} finally {
 					// Official dispose emits api-session/removed. The client keeps that
 					// flag permanently on its old Session, even after the host resumes it.
@@ -1999,6 +2071,48 @@ window.__ModuleLoader__.load({
 			// 两份闭包还会互相擦掉对方的多选高亮。
 			const disposers = [];
 			disposers.push(stopAutoscroll);
+
+			// —— 跟随 DSH 全局语言设置（官方 locale 服务） ——
+			// 同步读取已就绪的服务让首次渲染就用对语言；再用 cordis 注入兜住两种时序：
+			// locale 服务晚于本插件注册，或宿主热重载后服务被替换。两条路径共用同一绑定。
+			// 旧宿主没有 locale 服务时保持浏览器语言回退，插件仍完整可用。
+			let localeBound = false;
+			let localeDispose = null;
+			let localeUnsubscribe = null;
+			const releaseHostLocale = () => {
+				localeBound = false;
+				boundT = null;
+				localeUnsubscribe?.();
+				localeUnsubscribe = null;
+				if (typeof localeDispose === "function") {
+					try { localeDispose(); } catch { /* 宿主 locale 已卸载 */ }
+				}
+				localeDispose = null;
+				notifyLocale();
+			};
+			const useHostLocale = (locale) => {
+				if (localeBound) return;
+				if (typeof locale?.register !== "function" || typeof locale?.bind !== "function") return;
+				localeBound = true;
+				localeDispose = attachHostLocale(locale);
+				if (typeof locale.subscribe === "function") localeUnsubscribe = locale.subscribe(notifyLocale);
+				notifyLocale();
+			};
+			let readyLocale = null;
+			try { readyLocale = ctx.get?.("locale") ?? null; } catch { readyLocale = null; }
+			if (readyLocale) useHostLocale(readyLocale);
+			if (typeof ctx.inject === "function") {
+				try {
+					ctx.inject(["locale"], (child) => {
+						let locale = null;
+						try { locale = child.get?.("locale") ?? null; } catch { locale = null; }
+						if (locale) useHostLocale(locale);
+						child.effect(() => releaseHostLocale, "workspace-mover: host locale");
+					});
+				} catch { /* 该宿主没有 locale 服务：保留浏览器语言回退 */ }
+			}
+			disposers.push(releaseHostLocale);
+
 			const listen = (type, fn, options) => {
 				document.addEventListener(type, fn, options);
 				disposers.push(() => document.removeEventListener(type, fn, options));
