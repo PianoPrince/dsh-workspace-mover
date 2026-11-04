@@ -59,7 +59,7 @@ DeepSeek Harness's sidebar supports drag-to-reorder **within** a workspace, but 
 - **📦 Bulk move / group merge**: multi-select with Ctrl/Shift and drag the set, or use a workspace header's "⋯" → "Move whole group…"; an emptied source group can be deleted in one confirmation (up to 50 per batch, failures isolated)
 - **🚚 True move · zero tokens**: session id and full history are preserved as-is — no duplicates, no context re-injection
 - **🏠 Move-home wizard**: after a project folder was moved or renamed, re-point the broken workspace in place; id, title, order, and archive flags stay, and member sessions plus strays migrate together
-- **🛟 Session rescue** (Settings → Session Rescue): recover lost / unregistered / misfiled sessions; restore archived sessions; one-click repair and filtering
+- **🛟 Session rescue** (Settings → Session Repair): recover lost / unregistered / misfiled sessions; restore archived sessions; one-click repair and filtering
 - **🗑️ Recycle bin and backups**: deletes go to the recycle bin first and can be restored; migrations create recovery snapshots that can be restored or cleaned up
 - **🛡️ Data protection**: identical session content keeps one physical snapshot, so back-and-forth moves do not grow storage without bound; every move still appears in history with snapshot counts and footprint visible
 - **⏪ Move history and undo**: last 100 cross-workspace moves; bulk operations aggregate into one undoable entry
@@ -68,6 +68,8 @@ DeepSeek Harness's sidebar supports drag-to-reorder **within** a workspace, but 
 - **🔎 Migration preview**: before confirmation, show source, target path, collisions, running state, adapter mode, and estimated new backup bytes; reuse is called out when a matching snapshot already exists
 - **📂 Empty-group cleanup / open folder**: only truly empty workspaces are listed; open a group directory in your file manager
 - **🤖 Agent tools**: six model-callable tools — `mover_list_sessions` / `mover_move_session` / `mover_repair_sessions` / `mover_doctor` / `mover_create_workspace` / `mover_rename_workspace` — so "move this session to group X" in the conversation runs the same backup-first pipeline as the panel, and workspaces can be created and renamed too; move, repair and rename ask for user approval first (rename skips it under full access), and hosts without `dsh-tools` skip them automatically
+
+Migration itself makes no model calls and does not re-inject conversation history. Issuing instructions through an Agent and continuing the conversation can still consume model tokens. Panel filtering finds repair, archive and recovery records; it is not full-text search of conversation bodies.
 
 ## 🚀 Install
 
@@ -113,10 +115,10 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 | Symptom | What to do |
 |---|---|
 | Drag does nothing | Use **grouped view** and drop on a **workspace title row**; flat list view has no title rows and stays inactive |
-| Session is running | Wait for the current turn to finish, then move |
-| Move failed toast | There is a backup and automatic rollback; retry after following the toast. Details are in the host log under `MOVE FAILED` |
-| Move succeeded but sidebar didn't regroup | Refresh the page |
-| Some sessions vanished from the sidebar | Open **Settings → Session Rescue** to scan and recover them |
+| Session is running | Wait for the turn to finish, or explicitly choose stop-and-move in the confirmation dialog; cancelling leaves the task running |
+| Move failed toast | Check the error and recovery records. Rollback is attempted; recovery files are retained if rollback fails. Resolve the reported problem before retrying. See host logs under `MOVE FAILED` |
+| Move succeeded but sidebar didn't regroup | Desktop: fully quit from the tray and restart. Web: refresh the page. Do not repeat a completed migration |
+| Some sessions vanished from the sidebar | Open **Settings → Session Repair** to scan and recover them |
 | After upgrading to DSH 0.2, switching models on old sessions fails with `Unknown agent preset` | 0.2 no longer reads the 0.1.x legacy custom-preset directory; presets must be migrated to declaration rows — unrelated to this plugin, full steps in [docs/dsh-0.2-preset-migration.md](docs/dsh-0.2-preset-migration.md) |
 
 </details>
@@ -131,7 +133,7 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 |---|---|
 | **Drag an idle session row onto a target workspace title row** | **Confirm dialog shows the destination path** |
 | ![Drag a session to another workspace](docs/media/drag_session_to_another_workspace.png) | ![Cross-workspace confirm dialog](docs/media/confirm_popup.png) |
-| **Settings → Session Rescue** | |
+| **Settings → Session Repair** | |
 | ![Session rescue settings panel](docs/media/setting_dialogue_repair.png) | |
 
 ### Bulk move · multi-select
@@ -163,19 +165,19 @@ A real rename: folder `Test1` → `Test2`, then repair the workspace in place.
 1. After restart, open **grouped view** in the sidebar and hold an idle session row;
 2. Drop it on a target workspace title row;
 3. Confirm the destination path → **Move**;
-4. Toast confirms; refresh the page if the sidebar does not regroup automatically.
+4. Toast confirms. If the sidebar does not update, fully quit Desktop from the tray and restart, or refresh Web. Do not repeat a completed migration.
 
-Mid-turn sessions are rejected; failed moves roll back automatically.
+Wait for running tasks to finish, or explicitly choose stop-and-move; cancelling leaves the task running. Migration is blocked if the writer cannot be safely released. Failed moves attempt rollback; failed rollback retains recovery files and requires manual attention.
 
 ### Session rescue panel
 
-1. **Settings → Session Rescue** scans on open;
+1. **Settings → Session Repair** scans on open;
 2. **Lost / orphaned**: pick a target workspace → **Move**;
 3. **Unregistered**: **Attach** in place to the matching workspace;
 4. **Misfiled**: **Home** or **Home all**;
 5. **One-click repair** runs fixable items with per-item isolation;
 6. Filter by title / session id / path / group;
-7. **Archived / recycle bin / backups**: restore archived sessions; restore or purge deleted sessions; restore or clean backups.
+7. **Archived / recycle bin / backups**: restore archived sessions; restore or purge deleted sessions; restore or clean backups. Recycle restoration preserves the previous archived state: an originally archived session must also be restored from the Archived list to return to the ordinary sidebar.
 
 ### Conversational moves (agent tools)
 
@@ -205,7 +207,7 @@ Operations requiring approval are refused when the approval service is absent; u
 For users, the integration contract is:
 
 1. Mounted through **official DSH extension points** — DSH and dsh-market install files are not modified;
-2. Workspace membership changes use the host's **official interfaces** — no forged persistence data;
+2. Workspace membership registration uses host interfaces; a filesystem adapter moves raw archives and rewrites their working directory. This depends on the host storage layout and is reported as a compatibility warning by Doctor;
 3. Plugin-owned data (history, backups, recycle bin) lives in a **separate data directory**, apart from session archives;
 4. Official same-group sidebar sorting is **left alone** — only cross-workspace drops are handled.
 
@@ -213,16 +215,16 @@ Implementation details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## 🤝 Coexistence with other plugins
 
-Built to coexist: private communication/style namespaces, no rewrites of official install files, official interfaces for membership writes.
+Communication and styles use separate namespaces; host installation files are not rewritten. The table describes design boundaries, not installation tests of every plugin and version. See compatibility records for accepted scenarios.
 
 | Plugin category | Compatibility | Notes |
 | --- | --- | --- |
-| Official built-in plugins (the eight shipped since 0.2: terminal / web search / subagents / …) | ✅ No conflict | Disjoint feature surfaces; agent tools coexist through the official `dsh-tools` registry — this plugin's tools are namespaced with a `mover_` prefix |
-| Sidebar enhancements / better-sidebar / terminals / cost meters / memory / export & share | ✅ No conflict | Different panels and data surfaces |
-| Archive managers | ✅ Compatible | Both use official archive data; panel features may overlap |
-| Recycle-bin / session-delete plugins | ✅ Isolated data | Each plugin keeps its own recycle-bin directory, none shared; enable one delete entry point to avoid confusion |
-| Sort / pin plugins | ⚠️ Mostly compatible | Moves re-sort "Recently updated" precisely; display order in other plugins may differ slightly |
-| Plugins that redraw the sidebar | ⚠️ Graceful degradation | If the official sidebar structure is replaced, features may stop triggering — **no data damage** |
+| Official built-ins (such as terminal / web search / subagents) | Designed to coexist | Agent tools register through official `dsh-tools`, with a `mover_` name prefix |
+| Terminals / cost meters / memory / export & share | Not individually verified | Different primary features; check specific plugins and versions |
+| Archive managers | Not individually verified | Operate on the same sessions; avoid simultaneous modifications to a session |
+| Recycle-bin / session-delete plugins | This plugin's data is separate | Uses its own recycle bin and does not read other plugins' bins; prefer one delete entry point |
+| Sort / pin plugins | Display order needs checking | Moves update "Recently updated"; other plugins' pinning and sorting may affect display |
+| Sidebar enhancements / custom workspace trees | Drag may not trigger | Replacing the official structure can prevent row recognition; unresolved session identities are not guessed |
 | Other session movers | ❌ Pick one | Two drag interceptors can double-handle one drag; this plugin covers move / bulk / merge / homing / archive restore |
 
 ## 🧩 Compatibility and uninstall
@@ -269,12 +271,12 @@ Some advanced actions need newer DSH capabilities; when unavailable the UI says 
 
 ## 🔐 Safety Ledger (安全台账)
 
-Every migration runs through the same safety-bounded pipeline: **byte-level backup first → stepwise rollback → post-move verification → recovery ledger as the last resort**. Any failure returns to the pre-move state; the extreme case where even the rollback fails writes a durable recovery record and raises a red row in the rescue panel for manual review — data never disappears.
+Migration protects data through **recovery snapshot first → migration → post-move verification → rollback on failure**. If automatic rollback fails, recovery files are retained and the problem is recorded for manual attention. These measures reduce data-loss risk; they do not guarantee recovery from every failure.
 
 **Never-does:**
 
 - Never performs any git write operations (no commit / stash / reset / checkout);
-- Never touches a file before the byte-level backup is on disk;
+- Saves a recovery snapshot, or validates a reusable one, before physical migration;
 - Never silently discards session data — unrecoverable extremes are flagged in red with the scene preserved;
 - Never runs a destructive action without confirmation (conversational move / repair additionally requires the host approval prompt);
 - Never uploads any local data — the plugin makes no network requests, everything runs locally.
@@ -283,7 +285,7 @@ Every migration runs through the same safety-bounded pipeline: **byte-level back
 
 - **Automatic recovery snapshot before every move**; identical content (ignoring migration-only `cwd` changes) reuses an existing snapshot, then the landed session identity and path are re-checked — mismatch rolls the whole move back;
 - **Every move remains in history** with source, target, and the snapshot used, so deduplication never hides the operation trail;
-- **On failure, restore to the pre-move state** (files and bookkeeping together);
+- **On failure, attempt to restore the pre-move state** (files and bookkeeping together); failed rollback retains recovery files and reports the problem;
 - **Deletes go to the recycle bin first** and can be restored to the original spot or any group; permanent delete needs a second confirmation;
 - **If automatic recovery is not possible**, the rescue panel flags it for manual review; session files and backups are kept;
 - **Idle resident sessions tracked by the plugin** can be safely released and deleted. Running sessions are refused. Resident sessions opened before lifecycle tracking began require a full Harness restart before retrying deletion.
@@ -295,8 +297,8 @@ Every migration runs through the same safety-bounded pipeline: **byte-level back
 
 - Moving into the "Ungrouped" bucket is not supported;
 - Resident sessions without a captured lifecycle handle require a Harness restart before deletion;
-- If a third-party plugin fully redraws the sidebar, features may stop triggering (**no data damage**);
-- Flat list view has no workspace title rows — the plugin stays inactive there;
+- If a third-party plugin fully redraws the sidebar, row recognition and drag actions may stop working; unresolved identities are skipped rather than guessed;
+- Flat list view has no workspace title rows, so drag migration is inactive there. There is currently no general per-session "Move to…" menu; switch to grouped view or use the Agent migration tool;
 - Major host upgrades that change internal structures may degrade some actions or require a restart; the move-home wizard aborts before touching files if it cannot write safely.
 
 ## 🆕 Recent version
