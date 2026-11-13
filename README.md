@@ -1,7 +1,7 @@
 # dsh-workspace-mover
 
 
-当前版本：**2.4.3**。已通过 DSH Desktop `0.2.1-rc.5` 删除、还原、即时显示、继续发送及语言切换验收，详见[2.4.3 验收与 PR 审查记录](docs/compatibility/issue-11-pr-12-review-2026-11-02.md)。
+当前版本：**2.4.4**。Fork 迁移、删除还原及撤回补测已通过，详见[2.4.4 验收记录](docs/compatibility/issue-14-fork-acceptance-2026-11-13.md)。此前 DSH Desktop `0.2.1-rc.5` 的删除、还原、即时显示、继续发送及语言切换验收见[2.4.3 记录](docs/compatibility/issue-11-pr-12-review-2026-11-02.md)。
 
 支持即时迁移的会话：空闲时释放写入句柄、实际搬移并重新加载；运行中可取消，或明确选择「停止任务并迁移」。迁移保留标题和历史。安装或热更新后请彻底重启 DSH 一次，以接入会话生命周期；无法安全释放的会话会明确阻止拖动迁移。旧队列仍保留恢复与取消入口。后端验证与实际验收结果见 [即时迁移记录](docs/compatibility/immediate-migration-2026-10-26.md)。
 > [!IMPORTANT]
@@ -14,7 +14,7 @@
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm 最近 30 天下载量" src="https://img.shields.io/npm/dm/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.4.3-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.4.4-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="DSH tested 0.2.1-rc.5" src="https://img.shields.io/badge/DSH_tested-0.2.1--rc.5-4c8dff" style="height:20px; margin:0 2px;" />
     <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
   </p>
@@ -238,6 +238,7 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 
 | 插件版本 | 已验证 DeepSeek Harness | Node | 备注 |
 |----------|-------------------------|------|------|
+| 2.4.4 | `0.2.1-rc.5` Desktop（同一测试环境） | `≥22` | 用户确认 Fork 迁移、删除还原、运行中操作及撤回补测通过；Ubuntu Web 待单独验收 |
 | 2.4.3 | `0.2.1-rc.5` Desktop | `≥22` | 用户确认驻留会话删除、回收站还原、即时显示、继续发送、语言切换及迁移；运行中拒绝删除由自动测试覆盖 |
 | 2.4.2 | `0.2.1-rc.2` Desktop | `≥22` | 用户确认即时迁移、当前界面继续发送、运行中取消/停止迁移、标题保留及重启恢复 |
 | 2.4.0 | `0.2.1-rc.2` Desktop | `≥22` | 用户确认排队、迁移前后继续发送、两次重启、目标工作目录和工作区工具审批；自动滚动仅自动检查 |
@@ -316,6 +317,12 @@ dsh plugin --profile web add "link:C:/path/to/dsh-workspace-mover"
 取值非法或越界时回退默认值——配置写错不会让功能失效。
 
 ## 🆕 最近版本
+
+### v2.4.4 · 2026-11-13
+
+- 修复已打开的普通 Fork 会话被误判为子智能体、无法迁移或删除的问题（#14）；真正的子智能体保护保留。
+- 单条与批量撤回使用完整的生命周期释放及迁移入口，修复驻留会话撤回被占用检查拒绝的问题；撤回后重新连接当前对话。
+- Desktop 补测通过；真实宿主持久化后端及自动检查通过。详见[验收记录](docs/compatibility/issue-14-fork-acceptance-2026-11-13.md)和 [CHANGELOG](CHANGELOG.md)。报告中的 Ubuntu Web 环境尚未单独验收。
 
 ### v2.4.3 · 2026-11-03
 

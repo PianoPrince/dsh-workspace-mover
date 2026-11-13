@@ -1962,7 +1962,7 @@ window.__ModuleLoader__.load({
 				}
 				if (!connection) throw new Error(t("contextStale"));
 				const deleting = endpoint === 'mover.session.delete';
-				const migrating = endpoint === 'mover.move' || endpoint === 'mover.moveMany';
+				const migrating = endpoint === 'mover.move' || endpoint === 'mover.moveMany' || endpoint === 'mover.undo';
 				let ui, currentId;
 				try {
 					ui = migrating || deleting ? ctx.get?.('uiWorkspace') : null;

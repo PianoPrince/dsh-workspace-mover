@@ -566,6 +566,37 @@ test('deleting selected conversation clears its view without reopening; later se
   }
 });
 
+test('undo reconnects a removed selected conversation without repeating single or batch undo', async () => {
+  for (const batch of [false, true]) {
+    for (const navigated of [false, true]) {
+      resetDom(); ctx = makeCtx();
+      let rpc, selected = 'fork-child', binding, removed = true;
+      const actions = [];
+      const session = { getSnapshot: () => ({ removed }), async open() { actions.push('ready'); } };
+      binding = { session };
+      const ui = {
+        selection: { getSnapshot: () => ({ sessionId: selected }) },
+        clearMain() { actions.push('clear'); selected = null; binding = undefined; },
+        openSession(id) { actions.push(id); selected = id; removed = false; binding = { session }; }
+      };
+      ctx.slots = { inject(_name, fn) { fn(); }, register(options) { rpc = options.inject().rpcCall; } };
+      ctx.get = (key) => ({ uiWorkspace: ui, sessions: { binding: () => binding,
+        retainInfo: () => ({ subscribe(fn) { queueMicrotask(fn); return () => {}; } }) } })[key];
+      ctx.connection.rpc.call = async (_channel, method) => {
+        if (method === 'mover.undo') {
+          actions.push(method);
+          if (navigated) selected = 'other';
+        }
+        return { ok: true, value: { undone: true, batch } };
+      };
+      mod.apply(ctx);
+      actions.length = 0;
+      assert.equal((await rpc('mover.undo', { historyId: 'history' })).ok, true);
+      assert.deepEqual(actions, navigated ? ['mover.undo'] : ['mover.undo', 'clear', 'fork-child', 'ready']);
+    }
+  }
+});
+
 test('restore refreshes the real session baseline once; refresh failure never repeats file restoration', async () => {
   for (const endpoint of ['mover.trash.restore', 'mover.backups.restore', 'mover.unarchive']) {
     for (const brokenRefresh of [false, true]) {

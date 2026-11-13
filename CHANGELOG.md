@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.4] - 2026-11-13
+
+### Fixed
+
+- Do not treat `parentSession` alone as a live subagent marker: ordinary forked sessions also carry lineage. Allow tracked idle forks to migrate or enter the recycle bin, while retaining the guard for `origin: "subagent"` or positive `delegationDepth` (#14). Desktop acceptance and follow-up undo checks passed; see [the test plan](docs/compatibility/issue-14-fork-acceptance-2026-11-13.md).
+- Route single and batch undo through the locked lifecycle-aware migration entry instead of directly moving files, allowing tracked idle resident sessions to be undone. Reconnect the selected conversation after undo releases its previous client view. Running tasks remain protected; undo does not implicitly stop them.
+
 ## [2.4.3] - 2026-11-03
 
 ### Changed

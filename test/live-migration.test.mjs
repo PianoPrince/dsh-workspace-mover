@@ -70,6 +70,49 @@ test('delete lifecycle: no reload on success, restore after failure only when ar
 	} finally { teardown(); }
 });
 
+for (const header of [
+	{ parentSession: 'parent', isSeeded: true },
+	{ parentSession: 'parent', isSeeded: true, delegationDepth: 0 },
+	{ parentSession: 'parent' },
+	{ parentSession: 'parent', origin: 'subagent' },
+	{ delegationDepth: 1 },
+	{ parentSession: 'parent', isSeeded: true, origin: 'subagent', delegationDepth: 2 }
+]) {
+	for (const deleting of [false, true]) {
+		test(`lineage guard: ${JSON.stringify(header)} (${deleting ? 'delete' : 'move'})`, async () => {
+			const entries = new Map();
+			let disposals = 0, operations = 0, reloads = 0, teardown;
+			const agents = {
+				get: (id) => entries.get(id),
+				async resume({ resumeSessionId: id }) {
+					const agent = { id, status: 'idle', session: { header }, send() {} };
+					entries.set(id, agent);
+					return { agent, async dispose() { disposals++; entries.delete(id); } };
+				}
+			};
+			const ctx = { get: (key) => key === 'agents' ? agents : key === 'sessionController' ? {
+				async resolveAgent(id) { reloads++; return agents.resume({ resumeSessionId: id }); }
+			} : null };
+			installLifecycle(ctx, { agents, effect(fn) { teardown = fn(); } });
+			try {
+				const original = await agents.resume({ resumeSessionId: 'child' });
+				const run = () => withReleasedSession(ctx, 'child', false, () => { operations++; return 'done'; },
+					{ reloadOnSuccess: !deleting });
+				if (header.origin === 'subagent' || (header.delegationDepth ?? 0) > 0) {
+					await assert.rejects(run(), /Live subagent migration is unsupported/);
+					assert.deepEqual([disposals, operations, reloads], [0, 0, 0]);
+					assert.equal(agents.get('child'), original.agent);
+					assert.equal(lifecycleFor(ctx, 'child').handle, original);
+				} else {
+					assert.equal(await run(), 'done');
+					assert.deepEqual([disposals, operations, reloads], [1, 1, deleting ? 0 : 1]);
+					assert.equal(entries.has('child'), !deleting);
+				}
+			} finally { teardown(); }
+		});
+	}
+}
+
 const modules = process.env.DSH_TEST_NODE_MODULES;
 const load = (name) => import(pathToFileURL(join(resolve(modules), '@deepseek-ai', name, 'lib/index.js')).href);
 
@@ -184,6 +227,9 @@ test('installed DSH AgentLoop: dispose writer, physical move, resume same sessio
 		async detachSession(id) { this.record.sessionIds = this.record.sessionIds.filter((x) => x !== id); } }));
 	try {
 		root.provide('workspaceRegistry', { list: () => groups, get: (id) => groups.find((x) => x.id === id) });
+		let dispatch;
+		root.provide('connection', { rpc: { handle(_channel, handler) { dispatch = handler; return () => {}; } } });
+		root.provide('webServer', {});
 		root.provide('llm', {});
 		root.provide('tools', {});
 		root.provide('systemPrompt', { variable() {}, assemble() { return []; } });
@@ -195,6 +241,8 @@ test('installed DSH AgentLoop: dispose writer, physical move, resume same sessio
 		root.provide('sessionController', { async resolveAgent(id) {
 			return { agent: agents.get(id) ?? (await agents.resume({ resumeSessionId: id, agentOptions: {} })).agent };
 		} });
+		await root.plugin(mover).await();
+		await new Promise(setImmediate);
 		const id = 'session-live-test';
 		const first = await agents.create({ sessionId: id, meta: { cwd: a }, agentOptions: {} });
 		first.agent.session.append('working-directory/change', { cwd: a });
@@ -245,6 +293,53 @@ test('installed DSH AgentLoop: dispose writer, physical move, resume same sessio
 		assert.equal(agents.get(id), undefined, 'deleted Agent is not reloaded');
 		assert.equal(root.get('sessions').get(id), undefined, 'real Session writer is released');
 		assert.equal(lifecycleFor(root, id), null);
+		// Use the installed SessionStore's actual fork constructor, then persist
+		// its header/prefix through the real AgentLoop creation lifecycle.
+		const parent = await agents.create({ sessionId: 'fork-parent', meta: { cwd: a }, agentOptions: {} });
+		parent.agent.session.append('working-directory/change', { cwd: a });
+		const sessions = root.get('sessions');
+		let child;
+		const forkOwner = root.plugin({ name: 'test-fork-owner', inject: ['sessions'], async apply(ctx) {
+			child = ctx.get('sessions').fork(parent.agent.session, undefined, 'fork-child');
+			await ctx.get('sessions').flush(child);
+		} });
+		await forkOwner.await();
+		await forkOwner.dispose();
+		await agents.create({ sessionId: child.id, meta: child.header,
+			seed: child.snapshotEvents(), inheritedEventCount: child.inheritedEventCount, agentOptions: {} });
+		groups[0].record.sessionIds.push(child.id);
+		assert.equal(agents.get(child.id).session.header.parentSession, parent.agent.id);
+		assert.equal(agents.get(child.id).session.header.isSeeded, true);
+		assert.equal(agents.get(child.id).session.header.origin, undefined);
+		const forkMove = await mover.moveSessionEntry(root, { sessionId: child.id, targetWorkspaceId: 'b' });
+		assert.equal(forkMove.verified, true);
+		const forked = agents.get(child.id).session;
+		assert.equal(forked.header.parentSession, parent.agent.id);
+		assert.equal(forked.header.cwd, b);
+		forked.append('working-directory/change', { cwd: b });
+		await root.get('sessions').flush(forked);
+		const undone = await dispatch('mover.undo', { historyId: forkMove.historyId });
+		assert.equal(undone.ok, true, JSON.stringify(undone));
+		assert.equal(undone.value.undone, true);
+		assert.equal(agents.get(child.id).session.header.cwd, a);
+		agents.get(child.id).session.append('working-directory/change', { cwd: a });
+		await root.get('sessions').flush(agents.get(child.id).session);
+		assert.equal(parent.agent.session.header.cwd, a, 'parent remains in its original workspace');
+		const batch = await dispatch('mover.moveMany', { sessions: [{ sessionId: child.id }, { sessionId: parent.agent.id }], targetWorkspaceId: 'b' });
+		assert.equal(batch.ok, true, JSON.stringify(batch));
+		assert.equal(batch.value.failedCount, 0);
+		const batchUndo = await dispatch('mover.undo', { historyId: batch.value.historyId });
+		assert.equal(batchUndo.ok, true, JSON.stringify(batchUndo));
+		assert.equal(batchUndo.value.undoneCount, 2);
+		for (const sid of [child.id, parent.agent.id]) {
+			const session = agents.get(sid).session;
+			assert.equal(session.header.cwd, a);
+			session.append('working-directory/change', { cwd: a });
+			await root.get('sessions').flush(session);
+		}
+		assert.equal((await mover.deleteSessionToTrash(root, { sessionId: child.id })).deleted, true);
+		assert.equal(agents.get(child.id), undefined);
+		assert.ok(agents.get(parent.agent.id), 'deleting a fork leaves its parent live');
 	} finally {
 		await root.fiber.dispose();
 		if (prior === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = prior;

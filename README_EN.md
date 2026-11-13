@@ -1,7 +1,7 @@
 # dsh-workspace-mover
 
 
-Current version: **2.4.3**. Accepted on DSH Desktop `0.2.1-rc.5`: deletion, restoration, immediate list visibility, continued replies, language switching and migration. Restart DSH once after installing/updating to capture lifecycle handles. See the [2.4.3 acceptance and contribution review](docs/compatibility/issue-11-pr-12-review-2026-11-02.md).
+Current version: **2.4.4**. Fork migration, deletion/restoration and follow-up undo checks passed; see the [2.4.4 acceptance record](docs/compatibility/issue-14-fork-acceptance-2026-11-13.md). Earlier DSH Desktop `0.2.1-rc.5` deletion, restoration, list visibility, continued replies and locale acceptance is documented in the [2.4.3 record](docs/compatibility/issue-11-pr-12-review-2026-11-02.md). Restart DSH once after installing/updating to capture lifecycle handles.
 > [!IMPORTANT]
 > Unofficial project, independently developed and maintained by community members.
 
@@ -13,7 +13,7 @@ Current version: **2.4.3**. Accepted on DSH Desktop `0.2.1-rc.5`: deletion, rest
     <a href="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml"><img alt="CI" src="https://github.com/PianoPrince/dsh-workspace-mover/actions/workflows/test.yml/badge.svg" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
     <a href="https://www.npmjs.com/package/dsh-workspace-mover"><img alt="npm downloads in the last 30 days" src="https://img.shields.io/npm/dm/dsh-workspace-mover" style="height:20px; margin:0 2px;" /></a>
-    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.4.3-4d6bfe" style="height:20px; margin:0 2px;" />
+    <img alt="plugin version" src="https://img.shields.io/badge/dsh--plugin-2.4.4-4d6bfe" style="height:20px; margin:0 2px;" />
     <img alt="DSH tested 0.2.1-rc.5" src="https://img.shields.io/badge/DSH_tested-0.2.1--rc.5-4c8dff" style="height:20px; margin:0 2px;" />
     <img alt="Node" src="https://img.shields.io/badge/Node-%E2%89%A522-339933" style="height:20px; margin:0 2px;" />
   </p>
@@ -239,6 +239,7 @@ Recovery snapshots are separate from primary archives. A reused snapshot retains
 
 | Plugin version | Verified DeepSeek Harness | Node | Notes |
 |----------------|---------------------------|------|-------|
+| 2.4.4 | `0.2.1-rc.5` Desktop (same test environment) | `≥22` | User accepted Fork migration, deletion/restoration, running-task flows and follow-up undo checks; Ubuntu Web not separately verified |
 | 2.4.3 | `0.2.1-rc.5` Desktop | `≥22` | User accepted resident deletion, recycle restoration, immediate visibility, continued replies, language switching and migration; running deletion refusal covered by automated checks |
 | 2.4.2 | `0.2.1-rc.2` Desktop | `≥22` | User accepted immediate migration, continued replies in the same view, cancel/stop-and-move, titles and restart recovery |
 | 2.4.0 | `0.2.1-rc.2` Desktop | `≥22` | User accepted queueing, continued replies, two restarts, target cwd and workspace-tool approval; autoscroll automated checks only |
@@ -302,6 +303,12 @@ Migration protects data through **recovery snapshot first → migration → post
 - Major host upgrades that change internal structures may degrade some actions or require a restart; the move-home wizard aborts before touching files if it cannot write safely.
 
 ## 🆕 Recent version
+
+### v2.4.4 · 2026-11-13
+
+- Fix ordinary live forks being mistaken for subagents and refused migration or deletion (#14); actual subagent protection remains.
+- Single and batch undo now use the lifecycle-aware migration entry, fixing resident-writer refusal and reconnecting the selected conversation afterward.
+- Desktop acceptance and follow-up undo checks passed, alongside real installed-backend and automated checks. See the [acceptance record](docs/compatibility/issue-14-fork-acceptance-2026-11-13.md) and [CHANGELOG](CHANGELOG.md). The reported Ubuntu Web environment remains separately unverified.
 
 ### v2.4.3 · 2026-11-03
 
