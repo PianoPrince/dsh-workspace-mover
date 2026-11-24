@@ -2802,3 +2802,42 @@ test('Bundle 空间估算包含附件，空间不足时 dry-run 阻断且执行�
     syncBuiltinESMExports();
   }
 });
+
+test('后台作业仍在跑 → 拒绝迁移，且零副作用', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  ctx.waterfall = async (name, payload) => {
+    assert.equal(name, 'workspace/session-activity');
+    assert.equal(payload.sessionId, 'session-aaa');
+    return [{ kind: 'job', items: [{ id: 'job-1', label: 'pnpm test' }] }];
+  };
+  const before = readFileSync(artifactPath(root, A, 'session-aaa'));
+  const res = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(res.ok, false, JSON.stringify(res));
+  assert.equal(res.error.code, 'stop-required');
+  assert.match(res.error.message, /pnpm test/);
+  assert.deepEqual(readFileSync(artifactPath(root, A, 'session-aaa')), before, '档案一个字节都没动');
+  assert.ok(entityA.record.sessionIds.includes('session-aaa'), '仍归属源工作区');
+  assert.equal(existsSync(artifactPath(root, B, 'session-aaa')), false, '目标目录没有落地');
+  assert.equal(existsSync(join(root, 'workspace-mover', 'backups')), false, '预检阶段就拒绝，未产生备份');
+});
+
+test('活动报告只含 turn（或宿主无该瀑布）时不拦截', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  ctx.waterfall = async () => [{ kind: 'turn' }];
+  const moved = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(moved.ok, true, JSON.stringify(moved));
+  assert.ok(existsSync(artifactPath(root, B, 'session-aaa')));
+});
+
+test('后台作业仍在跑 → 拒绝删除到回收站', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  ctx.waterfall = async () => [{ kind: 'job', items: [{ id: 'job-1', label: 'dev server' }] }];
+  const res = await call('mover.session.delete', { sessionId: 'session-aaa' });
+  assert.equal(res.ok, false, JSON.stringify(res));
+  assert.equal(res.error.code, 'stop-required');
+  assert.ok(existsSync(artifactPath(root, A, 'session-aaa')), '档案仍在原处');
+  assert.ok(entityA.record.sessionIds.includes('session-aaa'), '记账未变');
+});
