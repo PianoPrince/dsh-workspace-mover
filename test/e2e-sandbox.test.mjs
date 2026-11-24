@@ -2831,6 +2831,29 @@ test('活动报告只含 turn（或宿主无该瀑布）时不拦截', async () 
   assert.ok(existsSync(artifactPath(root, B, 'session-aaa')));
 });
 
+test('定时任务不算「占用中」：照常迁移，但结果里提示任务会跟随', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  // 定时任务按会话 id 投递，搬走之后投递落在新工作区，因此不应阻塞；
+  // 否则绑定了 task 的会话将永远搬不动，而面板里没有暂停入口。
+  ctx.waterfall = async () => [{ kind: 'schedule', items: [{ id: 'schedule-1', label: '每日巡检' }] }];
+  const moved = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(moved.ok, true, JSON.stringify(moved));
+  assert.ok(moved.value.warnings.includes('schedule-follows-session'), '给出跟随提示');
+  assert.ok(existsSync(artifactPath(root, B, 'session-aaa')));
+});
+
+test('未知活动类型按「占用」处理（fail-safe）', async () => {
+  apply(ctx);
+  entityA.record.sessionIds.push('session-aaa');
+  ctx.waterfall = async () => [{ kind: 'some-future-work' }];
+  const res = await call('mover.move', { sessionId: 'session-aaa', targetWorkspaceId: 'wid-b' });
+  assert.equal(res.ok, false);
+  assert.equal(res.error.code, 'stop-required');
+  assert.match(res.error.message, /some-future-work/);
+  assert.ok(existsSync(artifactPath(root, A, 'session-aaa')), '档案未动');
+});
+
 test('后台作业仍在跑 → 拒绝删除到回收站', async () => {
   apply(ctx);
   entityA.record.sessionIds.push('session-aaa');

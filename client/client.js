@@ -31,6 +31,8 @@ window.__ModuleLoader__.load({
 				noTarget: "无法识别目标工作区（侧边栏结构变化？）",
 				staleList: "工作区列表与侧边栏不一致，请重试",
 				restartHint: "缓存失效失败：归属可能需要重启 Harness 后才刷新",
+
+				scheduleFollows: "这条会话绑定了定时任务，任务会跟着会话走：之后的投递落在新工作区。",
 				rescueSection: "会话修复",
 				rescueTitle: "会话修复",
 				rescueShort: "扫描全部会话档案，找回在侧边栏里「消失」或没有分组的会话。",
@@ -238,6 +240,8 @@ window.__ModuleLoader__.load({
 				noTarget: "Cannot resolve target workspace (sidebar layout changed?)",
 				staleList: "Workspace list out of sync with the sidebar; try again",
 				restartHint: "Cache invalidation failed: grouping may need a harness restart",
+
+				scheduleFollows: "This session has a scheduled task; the timer follows the session, so future deliveries land in the new workspace.",
 				rescueSection: "Session Repair",
 				rescueTitle: "Session Repair",
 				rescueShort: "Scan all session archives and recover conversations that vanished from the sidebar or lack a group.",
@@ -1082,6 +1086,8 @@ window.__ModuleLoader__.load({
 					}
 					const wsTitle = workspaces.find((w) => w.workspaceId === target)?.title ?? "";
 					setNote(res.value?.attached ? t("selfHealed") : t("relinked", { title: wsTitle }));
+
+					if ((res.value?.warnings ?? []).includes("schedule-follows-session")) setTimeout(() => toast(t("scheduleFollows")), 900);
 					refreshWorkspaces();
 					scheduleRecencyFix(ctx, target, [item.sessionId]);
 					await runScan();
@@ -2568,6 +2574,9 @@ window.__ModuleLoader__.load({
 							await reconcileWorkspaceProjection(ctx, workspace.workspaceId, movedIds.length > 0 ? movedIds : [sessionId]);
 							toast(res.value?.queued ? t("queuedMove") : (res.value?.attached ? t("selfHealed") : t("done", { title: workspace.title })));
 							scheduleRecencyFix(ctx, workspace.workspaceId, movedIds.length > 0 ? movedIds : [sessionId]);
+
+							const warns = [...(res.value?.warnings ?? []), ...(res.value?.results ?? []).flatMap((item) => item?.warnings ?? [])];
+							if (warns.includes("schedule-follows-session")) setTimeout(() => toast(t("scheduleFollows")), 1400);
 							if (res.value?.restartHint) setTimeout(() => toast(t("restartHint"), true), 1200);
 						} else {
 							const msg = res?.error?.message ?? "unknown";
