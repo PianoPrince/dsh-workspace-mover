@@ -27,6 +27,8 @@ window.__ModuleLoader__.load({
 				done: "✓ 已移动到「{title}」；若侧边栏未更新，请彻底退出并重启应用",
 				reopenFailed: "迁移操作已结束，但当前对话未能重新连接。请彻底退出并重启应用；无需重复迁移。",
 				rolledBack: "已自动回滚：{msg}",
+				rollbackIncomplete: "回滚不完整：文件已还原，但工作区归属未恢复，这条会话可能暂时看不到。请重启 Harness；重启后若仍不在任何工作区，用「会话修复」把它挂回去。（重启前修复面板可能显示它正常。）",
+				rollbackFailed: "回滚失败：{msg}。原始字节已保留在恢复备份中，请勿重复操作，先看恢复记录。",
 				failed: "移动失败：{msg}",
 				noTarget: "无法识别目标工作区（侧边栏结构变化？）",
 				staleList: "工作区列表与侧边栏不一致，请重试",
@@ -234,6 +236,8 @@ window.__ModuleLoader__.load({
 				done: "✓ Moved to \"{title}\"; fully quit and restart the app if the sidebar does not update",
 				reopenFailed: "The migration operation has finished, but the conversation could not reconnect. Fully quit and restart the app; do not repeat the move.",
 				rolledBack: "Rolled back automatically: {msg}",
+				rollbackIncomplete: "Rollback incomplete: the files were restored, but workspace membership was not, so the session may stay hidden. Restart the harness; if it is still in no workspace afterwards, re-attach it from Session Repair. (Before the restart that panel can report it as fine.)",
+				rollbackFailed: "Rollback failed: {msg}. The original bytes are kept in the recovery backup; do not repeat the move and check the recovery records first.",
 				failed: "Move failed: {msg}",
 				noTarget: "Cannot resolve target workspace (sidebar layout changed?)",
 				staleList: "Workspace list out of sync with the sidebar; try again",
@@ -1289,7 +1293,8 @@ window.__ModuleLoader__.load({
 				const stale = /inactive context/.test(raw);
 				const resident = /resident in memory/.test(raw);
 				const busy = (err?.code === "busy" || resident) && !stale;
-				const msg = stale ? t("contextStale")
+				const msg = err?.code === "rollback-incomplete" ? t("rollbackIncomplete")
+					: stale ? t("contextStale")
 					: !busy ? t("failed", { msg: raw })
 					: resident ? t("residentRefuse") : t("sessionBusy");
 				setNote(msg);
@@ -2564,9 +2569,19 @@ window.__ModuleLoader__.load({
 						if (res?.ok) {
 							wsCache = null;
 							scanCache = null;
-							const movedIds = (res.value?.results ?? []).filter((item) => item?.ok).map((item) => item.sessionId).filter(Boolean);
+							const resultItems = res.value?.results ?? [];
+							const incomplete = resultItems.some((item) => item?.code === "rollback-incomplete");
+							if (resultItems.length > 0 && resultItems.every((item) => !item?.ok)) {
+								// 批量汇总 ok:true 不代表每个成员都成功；全失败时不能说「已移动」。
+								toast(incomplete ? t("rollbackIncomplete") : t("failed", { msg: resultItems[0]?.error ?? "unknown" }), true);
+								return;
+							}
+							const movedIds = resultItems.filter((item) => item?.ok).map((item) => item.sessionId).filter(Boolean);
 							await reconcileWorkspaceProjection(ctx, workspace.workspaceId, movedIds.length > 0 ? movedIds : [sessionId]);
 							toast(res.value?.queued ? t("queuedMove") : (res.value?.attached ? t("selfHealed") : t("done", { title: workspace.title })));
+							if (incomplete) {
+								setTimeout(() => toast(t("rollbackIncomplete"), true), 900);
+							}
 							scheduleRecencyFix(ctx, workspace.workspaceId, movedIds.length > 0 ? movedIds : [sessionId]);
 							if (res.value?.restartHint) setTimeout(() => toast(t("restartHint"), true), 1200);
 						} else {
@@ -2575,8 +2590,15 @@ window.__ModuleLoader__.load({
 								toast(res.error?.details?.queueTaskId ? t("queuedMove") : t('failed', { msg }), true);
 								return;
 							}
-							const rolled = res?.error?.code === "rollback-failed" || /roll/i.test(msg);
-							const text = (rolled ? t("rolledBack", { msg }) : t("failed", { msg }));
+							const incomplete = res?.error?.code === "rollback-incomplete";
+							// Only an explicit "rolled back cleanly" may claim a rollback; other
+							// rollback-failed messages (e.g. a header rewrite that could not
+							// guarantee restoration) must read as a hard failure.
+							const clean = /rolled back cleanly/i.test(msg);
+							const text = incomplete ? t("rollbackIncomplete")
+								: clean ? t("rolledBack", { msg })
+								: res?.error?.code === "rollback-failed" ? t("rollbackFailed", { msg })
+								: t("failed", { msg });
 							toast(text, true);
 						}
 					} catch (err) {
@@ -2612,17 +2634,27 @@ window.__ModuleLoader__.load({
 					const res = await rpcCall("mover.moveMany", { sessions, targetWorkspaceId: workspace.workspaceId, mode: choice.mode, stopRunning: choice.stopRunning, allowQueue: false });
 					if (!res?.ok) {
 						const msg = res?.error?.message ?? "unknown";
-						const rolled = res?.error?.code === "rollback-failed" || /roll/i.test(msg);
-						return void toast((rolled ? t("rolledBack", { msg }) : t("failed", { msg })), true);
+						if (res?.error?.code === "rollback-incomplete") return void toast(t("rollbackIncomplete"), true);
+						const clean = /rolled back cleanly/i.test(msg);
+						const text = clean ? t("rolledBack", { msg })
+							: res?.error?.code === "rollback-failed" ? t("rollbackFailed", { msg })
+							: t("failed", { msg });
+						return void toast(text, true);
 					}
 					const { movedCount, attachedCount, failedCount, queuedCount } = res.value ?? {};
 					const okCount = (movedCount ?? 0) + (attachedCount ?? 0);
 					const movedIds = (res.value?.results ?? []).filter((item) => item?.ok).map((item) => item.sessionId).filter(Boolean);
 					await reconcileWorkspaceProjection(ctx, workspace.workspaceId, movedIds);
-					let message = t("batchDone", { n: okCount });
-					if ((failedCount ?? 0) > 0) message += t("batchFailTail", { n: failedCount });
+					const firstError = (res.value?.results ?? []).find((item) => !item?.ok && item?.error)?.error;
+					let message = okCount === 0 && (failedCount ?? 0) > 0
+						? t("failed", { msg: firstError ?? "unknown" })
+						: t("batchDone", { n: okCount });
+					if (okCount > 0 && (failedCount ?? 0) > 0) message += t("batchFailTail", { n: failedCount });
 					if ((queuedCount ?? 0) > 0) message += t("batchQueuedTail", { n: queuedCount });
 					toast(message);
+					if ((res.value?.results ?? []).some((item) => item?.code === "rollback-incomplete")) {
+						setTimeout(() => toast(t("rollbackIncomplete"), true), 900);
+					}
 					clearSelection(true);
 					scheduleRecencyFix(ctx, workspace.workspaceId, sessions.map((s) => s.sessionId));
 				} catch (err) {
@@ -2654,23 +2686,34 @@ window.__ModuleLoader__.load({
 					});
 					if (!res?.ok) {
 						const msg = res?.error?.message ?? "unknown";
-						const rolled = res?.error?.code === "rollback-failed" || /roll/i.test(msg);
-						return void toast((rolled ? t("rolledBack", { msg }) : t("failed", { msg })), true);
+						if (res?.error?.code === "rollback-incomplete") return void toast(t("rollbackIncomplete"), true);
+						const clean = /rolled back cleanly/i.test(msg);
+						const text = clean ? t("rolledBack", { msg })
+							: res?.error?.code === "rollback-failed" ? t("rollbackFailed", { msg })
+							: t("failed", { msg });
+						return void toast(text, true);
 					}
-					const { movedCount, attachedCount, failedCount } = res.value ?? {};
+					const { movedCount, attachedCount, failedCount, queuedCount } = res.value ?? {};
 					const okCount = (movedCount ?? 0) + (attachedCount ?? 0);
 					const movedIds = (res.value?.results ?? []).filter((item) => item?.ok).map((item) => item.sessionId).filter(Boolean);
 					await reconcileWorkspaceProjection(ctx, targetId, movedIds);
-					let message = t("batchDone", { n: okCount });
-					if ((failedCount ?? 0) > 0) message += t("batchFailTail", { n: failedCount });
+					const firstError = (res.value?.results ?? []).find((item) => !item?.ok && item?.error)?.error;
+					let message = okCount === 0 && (failedCount ?? 0) > 0
+						? t("failed", { msg: firstError ?? "unknown" })
+						: t("batchDone", { n: okCount });
+					if (okCount > 0 && (failedCount ?? 0) > 0) message += t("batchFailTail", { n: failedCount });
+					if ((queuedCount ?? 0) > 0) message += t("batchQueuedTail", { n: queuedCount });
 					toast(message);
+					if ((res.value?.results ?? []).some((item) => item?.code === "rollback-incomplete")) {
+						setTimeout(() => toast(t("rollbackIncomplete"), true), 900);
+					}
 					scheduleRecencyFix(ctx, targetId, ids);
 					// 合并：全部成员迁入且源分组已空时，提供删除空分组（逐级确认，失败不影响迁移结果）
 					try {
 						const fresh = await fetchWorkspaces();
 						const source = fresh.find((w) => w.workspaceId === workspace.workspaceId);
 						const targetTitle = fresh.find((w) => w.workspaceId === targetId)?.title ?? targetId;
-						if (source && (source.sessionIds ?? []).length === 0
+						if (source && (source.sessionIds ?? []).length === 0 && (failedCount ?? 0) === 0 && (queuedCount ?? 0) === 0
 							&& window.confirm(t("mergeDeleteConfirm", { count: okCount, title: workspace.title, target: targetTitle }))) {
 							// 官方 delete 成功即 resolve（void）、失败 reject
 							await ctx.get?.("workspaces")?.delete?.(workspace.workspaceId);
