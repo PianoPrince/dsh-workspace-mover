@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.4.5] - 2026-11-28
+
 ### Fixed
 
 - Restore installed-host test coverage across the tested DSH 0.2.1 and 0.2.2 runtimes (#15).
