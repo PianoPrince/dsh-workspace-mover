@@ -319,16 +319,15 @@ test('installed DSH AgentLoop: dispose writer, physical move, resume same sessio
 		await agents.create({ sessionId: child.id, meta: child.header,
 			seed: child.snapshotEvents(), inheritedEventCount: child.inheritedEventCount, agentOptions: modelOptions });
 		groups[0].record.sessionIds.push(child.id);
-		// DSH 0.2.2 seeds ordinary forks with `isSeeded` + the inherited prefix and
-		// no `parentSession` marker; only delegated children (dsh-subagent) carry
-		// parentSession/origin/delegationDepth. Pin that kernel behavior so a future
-		// runtime change to fork lineage shows up here instead of in production.
-		assert.equal(agents.get(child.id).session.header.parentSession, undefined);
+		const lineage = child.header.parentSession;
+		assert.ok(lineage === undefined || lineage === parent.agent.id);
+		assert.equal(agents.get(child.id).session.header.parentSession, lineage);
 		assert.equal(agents.get(child.id).session.header.isSeeded, true);
 		assert.equal(agents.get(child.id).session.header.origin, undefined);
 		const forkMove = await mover.moveSessionEntry(root, { sessionId: child.id, targetWorkspaceId: 'b' });
 		assert.equal(forkMove.verified, true);
 		const forked = agents.get(child.id).session;
+		assert.equal(forked.header.parentSession, lineage);
 		assert.equal(forked.header.isSeeded, true, 'move keeps the seeded-fork flag');
 		assert.equal(forked.header.cwd, b);
 		forked.append('working-directory/change', { cwd: b });
