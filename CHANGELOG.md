@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+## [2.4.5] - 2026-11-28
+
+### Fixed
+
+- Restore installed-host test coverage across the tested DSH 0.2.1 and 0.2.2 runtimes (#15).
+- Verify workspace membership after move rollback. Record incomplete recovery and report it separately from file rollback failure (#17).
+- Consult the host's session activity before moving, undoing a move, deleting, or changing a workspace path. Background jobs, delegated sessions, and active schedules block these operations. A failed activity lookup also blocks the operation (#19).
+
 ## [2.4.4] - 2026-11-13
 
 ### Fixed

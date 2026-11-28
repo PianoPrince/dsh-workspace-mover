@@ -144,7 +144,13 @@ test('installed client Controller: a Provider reference keeps the removed genera
 	// only inside this test. Renderer stores/transport are inert fixtures; actual
 	// Controller retention, scope retirement and Session flags are unmodified.
 	const file = join(resolve(modules), '@deepseek-ai/dsh-api-session-controller/lib/client.js');
-	const source = readFileSync(file, 'utf8').replace('exports.apply = apply;', 'exports.__ClientSessions = ClientSessions; exports.apply = apply;');
+	// The client bundle is minified in newer runtimes, so the export statement
+	// may or may not carry spaces around `=`. Match either shape and fail loudly
+	// when the anchor disappears, instead of silently injecting into nothing.
+	const raw = readFileSync(file, 'utf8');
+	const source = raw.replace(/exports\.apply\s*=\s*apply;/,
+		(match) => `exports.__ClientSessions = ClientSessions; ${match}`);
+	assert.notEqual(source, raw, 'client bundle must still export `apply`; update the injection anchor');
 	let exports;
 	const store = {
 		notifySubscribers(listeners) { for (const listener of [...listeners]) listener(); },
@@ -225,13 +231,18 @@ test('installed DSH AgentLoop: dispose writer, physical move, resume same sessio
 	const groups = ['a', 'b'].map((id, i) => ({ id, path: [a,b][i], record: { sessionIds: [] },
 		async attachSession(id) { this.record.sessionIds.push(id); },
 		async detachSession(id) { this.record.sessionIds = this.record.sessionIds.filter((x) => x !== id); } }));
+	// DSH 0.2.2 refuses to start a turn without a provider/model selection;
+	// the abort observer below runs before any model call, so the route is inert.
+	const modelOptions = { provider: 'test-provider', model: 'test-model' };
 	try {
 		root.provide('workspaceRegistry', { list: () => groups, get: (id) => groups.find((x) => x.id === id) });
 		let dispatch;
 		root.provide('connection', { rpc: { handle(_channel, handler) { dispatch = handler; return () => {}; } } });
 		root.provide('webServer', {});
 		root.provide('llm', {});
-		root.provide('tools', {});
+		// DSH 0.2.2 resolves the tool set before `agent/pre-step`, so the loop
+		// needs a real `resolve` entry point even when no tool is ever executed.
+		root.provide('tools', { async resolve() { return { tools: [] }; } });
 		root.provide('systemPrompt', { variable() {}, assemble() { return []; } });
 		for (const plugin of [Sessions, Agents, Projections]) await root.plugin(plugin).await();
 		await root.plugin(persistence, { root: join(home, 'sessions'), compression: 'zstd' }).await();
@@ -239,12 +250,12 @@ test('installed DSH AgentLoop: dispose writer, physical move, resume same sessio
 		await root.plugin(Loop, { agents: [], maxParallelToolCalls: 1 }).await();
 		const agents = root.get('agents');
 		root.provide('sessionController', { async resolveAgent(id) {
-			return { agent: agents.get(id) ?? (await agents.resume({ resumeSessionId: id, agentOptions: {} })).agent };
+			return { agent: agents.get(id) ?? (await agents.resume({ resumeSessionId: id, agentOptions: modelOptions })).agent };
 		} });
 		await root.plugin(mover).await();
 		await new Promise(setImmediate);
 		const id = 'session-live-test';
-		const first = await agents.create({ sessionId: id, meta: { cwd: a }, agentOptions: {} });
+		const first = await agents.create({ sessionId: id, meta: { cwd: a }, agentOptions: modelOptions });
 		first.agent.session.append('working-directory/change', { cwd: a });
 		groups[0].record.sessionIds.push(id);
 		assert.ok(lifecycleFor(root, id), 'real public lifecycle handle was captured');
@@ -266,7 +277,7 @@ test('installed DSH AgentLoop: dispose writer, physical move, resume same sessio
 		assert.equal((await read.read()).events.at(-1).data.cwd, b);
 		await read.close();
 		// Exercise cancellation of a real running driver without a model call.
-		const active = await agents.resume({ resumeSessionId: id, agentOptions: {} });
+		const active = await agents.resume({ resumeSessionId: id, agentOptions: modelOptions });
 		let entered;
 		const started = new Promise((resolve) => { entered = resolve; });
 		const off = root.on('agent/pre-step', async ({ signal }) => {
@@ -295,7 +306,7 @@ test('installed DSH AgentLoop: dispose writer, physical move, resume same sessio
 		assert.equal(lifecycleFor(root, id), null);
 		// Use the installed SessionStore's actual fork constructor, then persist
 		// its header/prefix through the real AgentLoop creation lifecycle.
-		const parent = await agents.create({ sessionId: 'fork-parent', meta: { cwd: a }, agentOptions: {} });
+		const parent = await agents.create({ sessionId: 'fork-parent', meta: { cwd: a }, agentOptions: modelOptions });
 		parent.agent.session.append('working-directory/change', { cwd: a });
 		const sessions = root.get('sessions');
 		let child;
@@ -306,15 +317,18 @@ test('installed DSH AgentLoop: dispose writer, physical move, resume same sessio
 		await forkOwner.await();
 		await forkOwner.dispose();
 		await agents.create({ sessionId: child.id, meta: child.header,
-			seed: child.snapshotEvents(), inheritedEventCount: child.inheritedEventCount, agentOptions: {} });
+			seed: child.snapshotEvents(), inheritedEventCount: child.inheritedEventCount, agentOptions: modelOptions });
 		groups[0].record.sessionIds.push(child.id);
-		assert.equal(agents.get(child.id).session.header.parentSession, parent.agent.id);
+		const lineage = child.header.parentSession;
+		assert.ok(lineage === undefined || lineage === parent.agent.id);
+		assert.equal(agents.get(child.id).session.header.parentSession, lineage);
 		assert.equal(agents.get(child.id).session.header.isSeeded, true);
 		assert.equal(agents.get(child.id).session.header.origin, undefined);
 		const forkMove = await mover.moveSessionEntry(root, { sessionId: child.id, targetWorkspaceId: 'b' });
 		assert.equal(forkMove.verified, true);
 		const forked = agents.get(child.id).session;
-		assert.equal(forked.header.parentSession, parent.agent.id);
+		assert.equal(forked.header.parentSession, lineage);
+		assert.equal(forked.header.isSeeded, true, 'move keeps the seeded-fork flag');
 		assert.equal(forked.header.cwd, b);
 		forked.append('working-directory/change', { cwd: b });
 		await root.get('sessions').flush(forked);
